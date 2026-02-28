@@ -7,12 +7,19 @@ import {
   listFolderInvites,
   listFolderMembers,
   revokeFolderInvite,
+  silentHostedRelink,
   storeAccessToken,
   storeRefreshToken,
 } from '../utils/auth'
 import { readSharedConfigAsync, writeSharedConfig } from '../utils/dotfile'
 import { type FolderInviteRecord, type FolderMemberRecord, type SharedFolderConfig } from '@obsidian-teams/shared'
 import { hasPendingOrActiveShares } from './share-state'
+import { ConfirmModal } from './confirm-modal'
+import {
+  friendlyError,
+  isHostedSessionError,
+  rawErrorMessage,
+} from '../utils/friendly-errors'
 
 const DEFAULT_INVITE_EXPIRY_HOURS = 24 * 7
 const DEFAULT_INVITE_MAX_USES = 1
@@ -25,6 +32,8 @@ export class ShareFolderModal extends Modal {
   private latestInviteToken: string | null = null
   private latestInviteLabel: string | null = null
   private latestInviteUrl: string | null = null
+  private inviteExpiryHours = DEFAULT_INVITE_EXPIRY_HOURS
+  private inviteMaxUses = DEFAULT_INVITE_MAX_USES
   private cachedMembers: FolderMemberRecord[] = []
   private cachedInvites: FolderInviteRecord[] = []
   private hasLoadedRemoteData = false
@@ -82,7 +91,7 @@ export class ShareFolderModal extends Modal {
       this.hasLoadedRemoteData = true
       return null
     } catch (err: unknown) {
-      return this.errorMessage(err, 'Failed to load members and invites')
+      return friendlyError(this.errorMessage(err, 'Failed to load members and invites'))
     }
   }
 
@@ -99,24 +108,38 @@ export class ShareFolderModal extends Modal {
       const { displayName, clientId, serverUrl } = this.plugin.settings
       const existingAccessToken = await getOrRefreshToken(this.plugin, folderId)
       const inviteLabel = this.inviteLabel.trim()
-      const hostedSessionToken = this.isHostedMode()
-        ? this.plugin.settings.hostedSessionToken || undefined
-        : undefined
 
-      const result = await createInvite(
-        serverUrl,
-        folderId,
-        this.folder.name,
-        clientId,
-        displayName || 'Anonymous',
-        existingAccessToken,
-        {
-          hostedSessionToken,
-          inviteeLabel: inviteLabel || undefined,
-          expiresInHours: DEFAULT_INVITE_EXPIRY_HOURS,
-          maxUses: DEFAULT_INVITE_MAX_USES,
+      const issueInvite = async () =>
+        createInvite(
+          serverUrl,
+          folderId,
+          this.folder.name,
+          clientId,
+          displayName || 'Anonymous',
+          existingAccessToken,
+          {
+            hostedSessionToken: this.isHostedMode() ? this.plugin.settings.hostedSessionToken || undefined : undefined,
+            inviteeLabel: inviteLabel || undefined,
+            expiresInHours: this.inviteExpiryHours,
+            maxUses: this.inviteMaxUses,
+          }
+        )
+
+      let result
+      try {
+        result = await issueInvite()
+      } catch (error) {
+        const raw = rawErrorMessage(error, 'Request failed')
+        if (!isHostedSessionError(raw) || !this.isHostedMode()) {
+          throw error
         }
-      )
+
+        const relinked = await silentHostedRelink(this.plugin, { force: true })
+        if (!relinked) {
+          throw error
+        }
+        result = await issueInvite()
+      }
 
       if (result.ownerAccessToken) {
         await storeAccessToken(this.plugin, folderId, result.ownerAccessToken)
@@ -151,17 +174,8 @@ export class ShareFolderModal extends Modal {
       this.latestInviteLabel = inviteLabel || null
       new Notice('Invite generated')
     } catch (err: unknown) {
-      const rawMessage = this.errorMessage(err, 'Request failed')
-      const lower = rawMessage.toLowerCase()
-      let message = rawMessage
-      if (lower.includes('subscription_inactive') || lower.includes('subscription is not active')) {
-        message = 'Subscription inactive. Open billing and activate a plan before creating invites.'
-      } else if (lower.includes('hosted_session_required')) {
-        message = 'Hosted account session missing. Add your hosted account email and click Subscribe in settings.'
-      } else if (lower.includes('subscription_past_due')) {
-        message = 'Subscription past due. Resolve billing, then retry invite creation.'
-      }
-      new Notice(`Failed to generate invite: ${message}`)
+      const raw = rawErrorMessage(err, 'Request failed')
+      new Notice(`Failed to generate invite: ${friendlyError(raw)}`)
       console.error('[teams] Share error:', err)
     } finally {
       this.actionInFlight = false
@@ -178,24 +192,28 @@ export class ShareFolderModal extends Modal {
     if (this.actionInFlight) return
     if (member.role === 'owner') return
 
-    const confirmed = window.confirm(
-      `Remove '${member.displayName}' from this shared folder?\n\n` +
-      'This revokes access immediately and rotates folder keys for future content.'
-    )
-    if (!confirmed) return
-
-    this.actionInFlight = true
-    try {
-      await this.plugin.removeMemberWithRekey(folderId, member.clientId)
-      this.hasLoadedRemoteData = false
-      new Notice(`Removed member: ${member.displayName}`)
-      await this.render()
-    } catch (err: unknown) {
-      new Notice(`Failed to remove member: ${this.errorMessage(err, 'Request failed')}`)
-      console.error('[teams] Remove member error:', err)
-    } finally {
-      this.actionInFlight = false
-    }
+    new ConfirmModal(
+      this.app,
+      'Remove member',
+      `Remove '${member.displayName}' from this shared folder?\n\nThis revokes access immediately and rotates folder keys for future content.`,
+      'Remove',
+      async () => {
+        this.actionInFlight = true
+        try {
+          await this.plugin.removeMemberWithRekey(folderId, member.clientId)
+          this.hasLoadedRemoteData = false
+          new Notice(`Removed member: ${member.displayName}`)
+          await this.render()
+        } catch (err: unknown) {
+          const raw = rawErrorMessage(err, 'Request failed')
+          new Notice(`Failed to remove member: ${friendlyError(raw)}`)
+          console.error('[teams] Remove member error:', err)
+        } finally {
+          this.actionInFlight = false
+        }
+      },
+      true
+    ).open()
   }
 
   private async handleRevokeInvite(folderId: string, invite: FolderInviteRecord): Promise<void> {
@@ -203,21 +221,29 @@ export class ShareFolderModal extends Modal {
     if (invite.status !== 'active') return
 
     const label = invite.inviteeLabel || this.shortId(invite.tokenHash)
-    const confirmed = window.confirm(`Revoke invite '${label}'?`)
-    if (!confirmed) return
 
-    this.actionInFlight = true
-    try {
-      await revokeFolderInvite(this.plugin, folderId, invite.tokenHash)
-      this.hasLoadedRemoteData = false
-      new Notice(`Revoked invite: ${label}`)
-      await this.render()
-    } catch (err: unknown) {
-      new Notice(`Failed to revoke invite: ${this.errorMessage(err, 'Request failed')}`)
-      console.error('[teams] Revoke invite error:', err)
-    } finally {
-      this.actionInFlight = false
-    }
+    new ConfirmModal(
+      this.app,
+      'Revoke invite',
+      `Revoke invite '${label}'?`,
+      'Revoke',
+      async () => {
+        this.actionInFlight = true
+        try {
+          await revokeFolderInvite(this.plugin, folderId, invite.tokenHash)
+          this.hasLoadedRemoteData = false
+          new Notice(`Revoked invite: ${label}`)
+          await this.render()
+        } catch (err: unknown) {
+          const raw = rawErrorMessage(err, 'Request failed')
+          new Notice(`Failed to revoke invite: ${friendlyError(raw)}`)
+          console.error('[teams] Revoke invite error:', err)
+        } finally {
+          this.actionInFlight = false
+        }
+      },
+      true
+    ).open()
   }
 
   private async clearSharedStateIfNoRecipients(folderId: string): Promise<boolean> {
@@ -277,6 +303,34 @@ export class ShareFolderModal extends Modal {
         })
       })
 
+    new Setting(contentEl)
+      .setName('Invite expires in')
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption('1', '1 hour')
+          .addOption('24', '1 day')
+          .addOption('168', '1 week (default)')
+          .addOption('720', '30 days')
+          .setValue(String(this.inviteExpiryHours))
+          .onChange((value) => {
+            this.inviteExpiryHours = Number.parseInt(value, 10) || DEFAULT_INVITE_EXPIRY_HOURS
+          })
+      })
+
+    new Setting(contentEl)
+      .setName('Max uses')
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption('1', '1 (single-use, default)')
+          .addOption('5', '5')
+          .addOption('10', '10')
+          .addOption('25', '25')
+          .setValue(String(this.inviteMaxUses))
+          .onChange((value) => {
+            this.inviteMaxUses = Number.parseInt(value, 10) || DEFAULT_INVITE_MAX_USES
+          })
+      })
+
     new Setting(contentEl).addButton((btn) => {
       const baseText = canBootstrap ? 'Start sharing + generate invite' : 'Generate invite'
       btn
@@ -329,11 +383,32 @@ export class ShareFolderModal extends Modal {
       readyCard.createEl('p', {
         cls: 'setting-item-description obsidian-teams-invite-ready-help',
         text: this.latestInviteLabel
-          ? `Send this to ${this.latestInviteLabel}. They can open the redeem URL for one-click join, or paste the token into "Join shared folder".`
-          : 'Send this to your teammate. They can open the redeem URL for one-click join, or paste the token into "Join shared folder".',
+          ? `Send this link to ${this.latestInviteLabel}. They'll be able to join with one click.`
+          : "Send this link to your collaborator. They'll be able to join with one click.",
       })
 
-      const tokenSetting = new Setting(readyCard).setName('Invite token')
+      if (this.latestInviteUrl) {
+        const urlSetting = new Setting(readyCard).setName('Redeem URL')
+        urlSetting.settingEl.addClass('obsidian-teams-token-row')
+        urlSetting.addText((text) => {
+          text.setValue(this.latestInviteUrl || '')
+          text.inputEl.setAttr('readonly', 'true')
+          text.inputEl.style.width = '100%'
+        })
+        urlSetting.addButton((btn) => {
+          btn.setButtonText('Copy link').setCta().onClick(async () => {
+            if (!this.latestInviteUrl) return
+            await navigator.clipboard.writeText(this.latestInviteUrl)
+            new Notice('Invite URL copied')
+          })
+        })
+      }
+
+      const disclosure = readyCard.createEl('details', { cls: 'obsidian-teams-token-disclosure' })
+      disclosure.createEl('summary', { text: 'Show raw token (advanced)' })
+      const disclosureBody = disclosure.createDiv()
+
+      const tokenSetting = new Setting(disclosureBody).setName('Invite token')
       tokenSetting.settingEl.addClass('obsidian-teams-token-row')
       tokenSetting.addText((text) => {
         text.setValue(this.latestInviteToken || '')
@@ -347,23 +422,6 @@ export class ShareFolderModal extends Modal {
           new Notice('Invite token copied')
         })
       })
-
-      if (this.latestInviteUrl) {
-        const urlSetting = new Setting(readyCard).setName('Redeem URL')
-        urlSetting.settingEl.addClass('obsidian-teams-token-row')
-        urlSetting.addText((text) => {
-          text.setValue(this.latestInviteUrl || '')
-          text.inputEl.setAttr('readonly', 'true')
-          text.inputEl.style.width = '100%'
-        })
-        urlSetting.addButton((btn) => {
-          btn.setButtonText('Copy').onClick(async () => {
-            if (!this.latestInviteUrl) return
-            await navigator.clipboard.writeText(this.latestInviteUrl)
-            new Notice('Invite URL copied')
-          })
-        })
-      }
     }
 
     if (!isShared || !isOwner) {

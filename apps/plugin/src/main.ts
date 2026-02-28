@@ -16,6 +16,7 @@ import {
   createHostedCheckoutSession,
   createHostedPortalSession,
   createHostedSession,
+  silentHostedRelink,
   getHostedAuthMe,
   decodeAccessToken,
   getAccessToken,
@@ -25,11 +26,14 @@ import {
   removeFolderMember,
 } from './utils/auth'
 import { ShareFolderModal } from './ui/share-modal'
-import { JoinFolderModal, joinSharedFolderByInvite } from './ui/join-modal'
+import { JoinFolderModal } from './ui/join-modal'
+import { OnboardingModal } from './ui/onboarding-modal'
+import { DashboardModal } from './ui/dashboard-modal'
 import { FolderKeyManager } from './crypto/folder-key-manager'
 import { keyHealthLabel, type KeyHealthState } from './ui/key-health-status'
 import { registerObsidianRequestUrl } from './utils/http'
 import { debugLog, setDebugLogging } from './utils/logger'
+import { friendlyError } from './utils/friendly-errors'
 
 interface FolderSession {
   fileTree: FileTreeSync
@@ -72,7 +76,6 @@ export default class ObsidianTeamsPlugin extends Plugin {
   private networkNoticeCooldownMs = 90_000
   private lastNetworkNoticeAt = 0
   private membershipDetachInFlight = new Set<string>()
-  private protocolJoinInFlight = false
   private protocolBillingInFlight = false
 
   async onload() {
@@ -84,6 +87,10 @@ export default class ObsidianTeamsPlugin extends Plugin {
     if (!this.settings.clientId) {
       this.settings.clientId = crypto.randomUUID()
       await this.saveSettings()
+    }
+
+    if (this.isHostedMode() && this.settings.hostedAccountEmail) {
+      void silentHostedRelink(this)
     }
 
     this.keyManager = new FolderKeyManager(
@@ -128,10 +135,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
 
     // Ribbon icon
     this.addRibbonIcon('users', 'Collaborative Folders', () => {
-      const name = this.settings.displayName || 'No name set'
-      const id = this.settings.clientId.slice(0, 8)
-      const folders = this.sharedFolders.length
-      new Notice(`Collaborative Folders: ${name} (${id})\n${folders} shared folder(s)`)
+      new DashboardModal(this.app, this).open()
     })
 
     // Command: Join shared folder
@@ -139,7 +143,19 @@ export default class ObsidianTeamsPlugin extends Plugin {
       id: 'join-shared-folder',
       name: 'Join shared folder',
       callback: () => {
+        if (!this.settings.onboardingComplete) {
+          new OnboardingModal(this.app, this).open()
+          return
+        }
         new JoinFolderModal(this.app, this).open()
+      },
+    })
+
+    this.addCommand({
+      id: 'shared-folders-dashboard',
+      name: 'View shared folders',
+      callback: () => {
+        new DashboardModal(this.app, this).open()
       },
     })
 
@@ -207,6 +223,10 @@ export default class ObsidianTeamsPlugin extends Plugin {
               .setTitle('Share folder...')
               .setIcon('share-2')
               .onClick(() => {
+                if (!this.settings.onboardingComplete) {
+                  new OnboardingModal(this.app, this).open()
+                  return
+                }
                 new ShareFolderModal(this.app, file, this).open()
               })
           })
@@ -270,6 +290,10 @@ export default class ObsidianTeamsPlugin extends Plugin {
         .catch((err) => {
           console.error('[teams] Failed to initialize shared folders:', err)
         })
+
+      if (!this.settings.onboardingComplete) {
+        new OnboardingModal(this.app, this).open()
+      }
     })
 
     debugLog('Collaborative Folders plugin loaded')
@@ -316,27 +340,22 @@ export default class ObsidianTeamsPlugin extends Plugin {
     const inviteToken = this.resolveInviteTokenFromDeepLink(params)
     if (!inviteToken) {
       new Notice('Invite link is missing token')
-      new JoinFolderModal(this.app, this).open()
+      if (!this.settings.onboardingComplete) {
+        new OnboardingModal(this.app, this).open()
+      } else {
+        new JoinFolderModal(this.app, this).open()
+      }
       return
     }
 
-    if (this.protocolJoinInFlight) {
-      new Notice('A shared folder join is already in progress')
+    if (!this.settings.onboardingComplete) {
+      this.settings.pendingInviteToken = inviteToken
+      await this.saveSettings()
+      new OnboardingModal(this.app, this).open()
       return
     }
 
-    this.protocolJoinInFlight = true
-    try {
-      const result = await joinSharedFolderByInvite(this.app, this, inviteToken)
-      new Notice(`Joined shared folder: ${result.folderName}`)
-    } catch (err: unknown) {
-      const message = err instanceof Error ? err.message : 'Unknown error'
-      new Notice(`Failed to join folder: ${message}`)
-      console.error('[teams] Deep-link join error:', err)
-      new JoinFolderModal(this.app, this, { inviteToken }).open()
-    } finally {
-      this.protocolJoinInFlight = false
-    }
+    new JoinFolderModal(this.app, this, { inviteToken }).open()
   }
 
   private normalizeBillingStatus(value: string): 'success' | 'cancel' | 'return' {
@@ -449,6 +468,13 @@ export default class ObsidianTeamsPlugin extends Plugin {
         new Notice('Returned from billing portal. Subscription is active.')
       } else {
         new Notice(`Returned from billing portal. Current billing status: ${subscriptionStatus}.`)
+      }
+
+      if (this.isHostedSubscriptionActive(subscriptionStatus) && this.settings.pendingInviteToken) {
+        new Notice('You have a pending invite. Opening join flow...')
+        new JoinFolderModal(this.app, this, {
+          inviteToken: this.settings.pendingInviteToken,
+        }).open()
       }
 
       void this.refreshSharedFolders()
@@ -584,6 +610,70 @@ export default class ObsidianTeamsPlugin extends Plugin {
     await this.clearLocalFolderLink(folderId)
 
     new Notice(`Left shared folder: ${sf.config.displayName || sf.path}. Local files kept as snapshot.`)
+  }
+
+  private getDashboardStatus(folderId: string): 'connected' | 'offline' | 'auth-expired' {
+    const token = getAccessToken(this, folderId)
+    if (!token) return 'auth-expired'
+
+    const payload = decodeAccessToken(token)
+    if (!payload) return 'auth-expired'
+    if (payload.exp && payload.exp * 1000 <= Date.now()) {
+      return 'auth-expired'
+    }
+    return this.connectionStatus === 'connected' && this.authStatus === 'ok' ? 'connected' : 'offline'
+  }
+
+  getDashboardEntries(): Array<{
+    folderId: string
+    folderName: string
+    folderPath: string
+    role: 'owner' | 'editor'
+    memberCount: number
+    status: 'connected' | 'offline' | 'auth-expired'
+  }> {
+    return this.sharedFolders.map((sharedFolder) => {
+      const roleFromToken = getFolderRole(this, sharedFolder.config.folderId)
+      const roleFromConfig = sharedFolder.config.members.find(
+        (member) => member.clientId === this.settings.clientId
+      )?.role
+      const role = roleFromToken || roleFromConfig || 'editor'
+
+      return {
+        folderId: sharedFolder.config.folderId,
+        folderName: sharedFolder.config.displayName || sharedFolder.path,
+        folderPath: sharedFolder.path,
+        role,
+        memberCount: sharedFolder.config.members.length || 1,
+        status: this.getDashboardStatus(sharedFolder.config.folderId),
+      }
+    })
+  }
+
+  openShareModalForPath(folderPath: string): boolean {
+    const target = this.app.vault.getAbstractFileByPath(folderPath)
+    if (!(target instanceof TFolder)) return false
+    new ShareFolderModal(this.app, target, this).open()
+    return true
+  }
+
+  async leaveSharedFolderById(folderId: string): Promise<void> {
+    const sharedFolder = this.sharedFolders.find((item) => item.config.folderId === folderId)
+    if (!sharedFolder) return
+    await this.leaveSharedFolder(sharedFolder)
+  }
+
+  revealFolderInExplorer(folderPath: string): boolean {
+    const target = this.app.vault.getAbstractFileByPath(folderPath)
+    if (!target) return false
+
+    const leaves = this.app.workspace.getLeavesOfType('file-explorer')
+    if (leaves.length === 0) return false
+    const explorerView = leaves[0]?.view as { revealInFolder?: (target: unknown) => void } | undefined
+    if (!explorerView || typeof explorerView.revealInFolder !== 'function') return false
+
+    explorerView.revealInFolder(target)
+    return true
   }
 
   /** Start/stop FileTreeSync + SharedFolderWatcher to match discovered shared folders */
@@ -1084,9 +1174,9 @@ export default class ObsidianTeamsPlugin extends Plugin {
     const details: string[] = []
 
     if (this.authStatus === 'auth-failed') {
-      details.push('Teams: re-authenticating...')
+      details.push('Reconnecting...')
     } else if (this.authStatus === 'auth-expired') {
-      details.push('Teams: access expired')
+      details.push('Session expired - right-click folder to fix')
     } else if (this.connectionStatus === 'offline') {
       details.push('Teams: offline')
     } else if (this.connectionStatus === 'syncing') {
@@ -1308,7 +1398,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
       return `Could not reach ${this.settings.serverUrl}. Check DNS/network/CORS and retry.`
     }
 
-    return message || fallback
+    return friendlyError(message || fallback)
   }
 
   private async ensureHostedBillingSession(): Promise<string | null> {
@@ -1424,6 +1514,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
   async loadSettings() {
     const loaded = (await this.loadData()) as Partial<ObsidianTeamsSettings> | null
     this.settings = Object.assign({}, DEFAULT_SETTINGS, loaded || {})
+    let requiresSave = false
 
     if (this.settings.deploymentMode !== 'hosted-service' && this.settings.deploymentMode !== 'self-deployment') {
       const configuredUrl = (this.settings.serverUrl || '').trim().replace(/\/+$/, '')
@@ -1450,6 +1541,15 @@ export default class ObsidianTeamsPlugin extends Plugin {
 
     this.settings.folderTokens = this.settings.folderTokens || {}
     this.settings.folderRefreshTokens = this.settings.folderRefreshTokens || {}
+
+    if (!this.settings.onboardingComplete && this.settings.displayName.trim()) {
+      this.settings.onboardingComplete = true
+      requiresSave = true
+    }
+
+    if (requiresSave) {
+      await this.saveSettings()
+    }
   }
 
   async saveSettings() {

@@ -26,7 +26,8 @@ const MAX_INVITE_EXPIRY_HOURS = Number(process.env.INVITE_MAX_EXPIRY_HOURS || 24
 const MAX_INVITE_USES_LIMIT = Number(process.env.INVITE_MAX_USES_LIMIT || 100)
 const INVITE_CREATE_MAX_PER_HOUR = Number(process.env.INVITE_CREATE_MAX_PER_HOUR || 100)
 const INVITE_REDEEM_MAX_PER_HOUR = Number(process.env.INVITE_REDEEM_MAX_PER_HOUR || 200)
-const PLUGIN_INSTALL_URL = 'https://obsidian.md/plugins?id=collaborative-folders'
+const PLUGIN_INSTALL_URL =
+  'https://github.com/abromberg/obsidian-collaborative-folders#installing-before-obsidian-community-approval'
 const FAVICON_DATA_URL =
   'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270%200%20100%20100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E%F0%9F%93%99%3C/text%3E%3C/svg%3E'
 
@@ -93,6 +94,155 @@ interface InviteRow {
   use_count: number
   revoked_at: string | null
   revoked_by: string | null
+}
+
+type InviteValidationErrorKind = 'not_found' | 'revoked' | 'expired' | 'consumed'
+
+interface InvitePreviewMetadata {
+  invite: InviteRow
+  folderName: string
+  ownerDisplayName: string
+}
+
+class InviteValidationError extends Error {
+  readonly status: number
+  readonly kind: InviteValidationErrorKind
+
+  constructor(kind: InviteValidationErrorKind) {
+    const messageByKind: Record<InviteValidationErrorKind, string> = {
+      not_found: 'Invite not found',
+      revoked: 'Invite revoked',
+      expired: 'Invite expired',
+      consumed: 'Invite consumed',
+    }
+    const statusByKind: Record<InviteValidationErrorKind, number> = {
+      not_found: 404,
+      revoked: 410,
+      expired: 410,
+      consumed: 410,
+    }
+    super(messageByKind[kind])
+    this.status = statusByKind[kind]
+    this.kind = kind
+  }
+}
+
+function renderInviteErrorPage(kind: InviteValidationErrorKind): string {
+  const titleByKind: Record<InviteValidationErrorKind, string> = {
+    not_found: 'Invite not found',
+    expired: 'Invite expired',
+    revoked: 'Invite revoked',
+    consumed: 'Invite already used',
+  }
+  const title = titleByKind[kind]
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${title}</title>
+    <link rel="icon" href="${FAVICON_DATA_URL}">
+    <style>
+      :root {
+        --bg: #f1eee2;
+        --surface: #fbf8ef;
+        --text-strong: #352e22;
+        --text-soft: #615847;
+        --line: #d5ccb5;
+        --accent-soft: #e7ddc5;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        padding: 24px;
+        display: grid;
+        place-items: center;
+        background: var(--bg);
+        color: var(--text-strong);
+        font-family: "Avenir Next", "Nunito Sans", "Segoe UI", sans-serif;
+      }
+      .card {
+        width: min(640px, 100%);
+        border-radius: 18px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        box-shadow: 0 20px 48px rgba(39, 30, 11, 0.08);
+        padding: 24px;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(28px, 5vw, 40px);
+        line-height: 1;
+      }
+      p {
+        color: var(--text-soft);
+        font-size: 16px;
+        line-height: 1.5;
+        margin-top: 14px;
+      }
+      .actions {
+        margin-top: 20px;
+      }
+      button {
+        border: 1px solid #ddd3ba;
+        border-radius: 12px;
+        background: var(--accent-soft);
+        color: var(--text-strong);
+        padding: 11px 16px;
+        font-size: 16px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <article class="card">
+      <h1>${title}</h1>
+      <p>This invite is no longer valid. Ask the folder owner to send a new one.</p>
+      <div class="actions">
+        <button type="button" onclick="window.close(); history.back();">Back</button>
+      </div>
+    </article>
+  </body>
+</html>`
+}
+
+function getInvitePreviewMetadata(inviteToken: string): InvitePreviewMetadata {
+  const db = getDb()
+  const tokenHash = crypto.createHash('sha256').update(inviteToken).digest('hex')
+  const invite = db.prepare('SELECT * FROM invites WHERE token_hash = ?').get(tokenHash) as InviteRow | undefined
+
+  if (!invite) {
+    throw new InviteValidationError('not_found')
+  }
+  if (invite.revoked_at) {
+    throw new InviteValidationError('revoked')
+  }
+  if (invite.expires_at && new Date(invite.expires_at).getTime() <= Date.now()) {
+    throw new InviteValidationError('expired')
+  }
+  if (invite.use_count >= invite.max_uses) {
+    throw new InviteValidationError('consumed')
+  }
+
+  const folder = db
+    .prepare('SELECT name, owner_client_id FROM folders WHERE id = ?')
+    .get(invite.folder_id) as Pick<FolderRow, 'name' | 'owner_client_id'> | undefined
+  if (!folder) {
+    throw new InviteValidationError('not_found')
+  }
+
+  const owner = db
+    .prepare('SELECT display_name FROM members WHERE folder_id = ? AND client_id = ?')
+    .get(invite.folder_id, folder.owner_client_id) as Pick<MemberTokenRow, 'display_name'> | undefined
+
+  return {
+    invite,
+    folderName: folder.name || 'Shared Folder',
+    ownerDisplayName: owner?.display_name || 'Folder owner',
+  }
 }
 
 function trimTrailingSlash(value: string): string {
@@ -166,6 +316,41 @@ const inviteRedeemRateLimiter = createRateLimiter({
   },
 })
 
+const invitePreviewRateLimiter = createRateLimiter({
+  name: 'invite-preview',
+  windowMs: 60_000,
+  maxRequests: Number(process.env.INVITE_PREVIEW_MAX_PER_MINUTE || 60),
+  keyFn: (req) => `${req.ip}`,
+})
+
+/** GET /api/invite/preview — Read-only invite metadata without consuming the token. */
+inviteRouter.get('/preview', invitePreviewRateLimiter, (req: Request, res: Response) => {
+  try {
+    const tokenQuery = req.query.token
+    const inviteToken = typeof tokenQuery === 'string' ? tokenQuery.trim() : ''
+    if (!inviteToken) {
+      res.status(400).json({ error: 'Missing token' })
+      return
+    }
+
+    const metadata = getInvitePreviewMetadata(inviteToken)
+    res.json({
+      folderName: metadata.folderName,
+      ownerDisplayName: metadata.ownerDisplayName,
+      expiresAt: metadata.invite.expires_at,
+      remainingUses: Math.max(0, metadata.invite.max_uses - metadata.invite.use_count),
+    })
+  } catch (error) {
+    if (error instanceof InviteValidationError) {
+      res.status(error.status).json({ error: error.message })
+      return
+    }
+    const message = error instanceof Error ? error.message : 'Internal server error'
+    console.error('[invite] Error previewing invite:', redactValue({ message, query: req.query }))
+    res.status(500).json({ error: message })
+  }
+})
+
 /** GET /api/invite/redeem — Browser redirect page that deep-links into Obsidian */
 inviteRouter.get('/redeem', (req: Request, res: Response) => {
   const tokenQuery = req.query.token
@@ -185,9 +370,28 @@ inviteRouter.get('/redeem', (req: Request, res: Response) => {
     return
   }
 
+  try {
+    getInvitePreviewMetadata(inviteToken)
+  } catch (error) {
+    if (error instanceof InviteValidationError) {
+      res
+        .status(error.status)
+        .type('html')
+        .setHeader('Cache-Control', 'no-store')
+        .setHeader('Referrer-Policy', 'no-referrer')
+        .send(renderInviteErrorPage(error.kind))
+      return
+    }
+    const message = error instanceof Error ? error.message : 'Internal server error'
+    console.error('[invite] Error validating invite for redeem page:', redactValue({ message, query: req.query }))
+    res.status(500).type('html').send('<!doctype html><html><body><p>Internal server error.</p></body></html>')
+    return
+  }
+
   const deepLink = `obsidian://teams-join?token=${encodeURIComponent(inviteToken)}`
   const escapedDeepLink = escapeHtml(deepLink)
   const escapedInviteToken = escapeHtml(inviteToken)
+  const escapedInstallUrl = escapeHtml(PLUGIN_INSTALL_URL)
   const deepLinkLiteral = JSON.stringify(deepLink)
   const installUrlLiteral = JSON.stringify(PLUGIN_INSTALL_URL)
 
@@ -355,6 +559,28 @@ inviteRouter.get('/redeem', (req: Request, res: Response) => {
         color: #736a58;
         font-size: 16px;
       }
+      .install-help {
+        margin: 10px 0 0;
+        color: #6f6553;
+        font-size: 14px;
+        line-height: 1.4;
+      }
+      .plugin-help {
+        margin-top: 10px;
+        border-top: 1px solid var(--line);
+        padding-top: 10px;
+      }
+      .plugin-help summary {
+        cursor: pointer;
+        font-weight: 700;
+      }
+      .plugin-help p {
+        margin: 9px 0 0;
+        color: var(--text-soft);
+      }
+      .plugin-help a {
+        color: #8f5b00;
+      }
       @media (max-width: 800px) {
         .card {
           padding: 22px 20px;
@@ -401,8 +627,14 @@ inviteRouter.get('/redeem', (req: Request, res: Response) => {
         <p class="status"><span class="status-dot" aria-hidden="true"></span><span id="status-text">Trying to launch the app now.</span></p>
         <div class="actions">
           <a class="button primary" href="${escapedDeepLink}" id="open-obsidian">Open in Obsidian</a>
-          <button type="button" id="install-plugin">Install plugin</button>
+          <button type="button" id="install-plugin">How to install</button>
         </div>
+        <p class="install-help">This plugin requires BRAT to install while awaiting Obsidian community approval.</p>
+        <details class="plugin-help" id="plugin-not-installed">
+          <summary>Plugin not installed?</summary>
+          <p>Install it with BRAT first, then return to this page and click "Open in Obsidian".</p>
+          <p><a href="${escapedInstallUrl}" target="_blank" rel="noopener noreferrer">Open BRAT install instructions</a></p>
+        </details>
         <div class="label">Invite token</div>
         <div class="token-row">
           <input id="invite-token" readonly value="${escapedInviteToken}">
@@ -418,12 +650,18 @@ inviteRouter.get('/redeem', (req: Request, res: Response) => {
       const copyButton = document.getElementById('copy-token')
       const installButton = document.getElementById('install-plugin')
       const statusTextEl = document.getElementById('status-text')
+      const pluginHelpEl = document.getElementById('plugin-not-installed')
 
       const openDeepLink = () => {
         window.location.href = deepLink
       }
 
       window.setTimeout(openDeepLink, 40)
+      window.setTimeout(() => {
+        if (document.visibilityState === 'visible' && pluginHelpEl && 'open' in pluginHelpEl) {
+          pluginHelpEl.open = true
+        }
+      }, 3000)
 
       installButton?.addEventListener('click', () => {
         window.open(installUrl, '_blank', 'noopener,noreferrer')

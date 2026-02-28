@@ -3,6 +3,7 @@ import type {
   CreateInviteRequest,
   RedeemInviteRequest,
   RedeemResponse,
+  InvitePreviewResponse,
   InviteResponse,
   AccessTokenPayload,
   RefreshResponse,
@@ -409,6 +410,86 @@ export async function redeemInvite(
   }
 
   return response.json()
+}
+
+/** Preview an invite token without consuming it. */
+export async function previewInvite(
+  serverUrl: string,
+  inviteToken: string
+): Promise<InvitePreviewResponse> {
+  const normalizedToken = inviteToken.trim()
+  if (!normalizedToken) {
+    throw new Error('Missing token')
+  }
+
+  const response = await httpRequest(
+    `${serverUrl}/api/invite/preview?token=${encodeURIComponent(normalizedToken)}`,
+    {
+      headers: {
+        [PROTOCOL_HEADER]: PROTOCOL_V2,
+      },
+    }
+  )
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
+    throw new Error(error.error || `HTTP ${response.status}`)
+  }
+
+  return (await response.json()) as InvitePreviewResponse
+}
+
+function sessionExpiresSoon(expiresAt: string): boolean {
+  if (!expiresAt) return true
+  const expiryMs = new Date(expiresAt).getTime()
+  if (!Number.isFinite(expiryMs)) return true
+  return expiryMs - Date.now() <= 60_000
+}
+
+/** Refresh hosted session in the background using stored hosted email. */
+export async function silentHostedRelink(
+  plugin: ObsidianTeamsPlugin,
+  options: { force?: boolean } = {}
+): Promise<boolean> {
+  if (plugin.settings.deploymentMode !== 'hosted-service') {
+    return false
+  }
+
+  const email = plugin.settings.hostedAccountEmail.trim().toLowerCase()
+  if (!email) {
+    return false
+  }
+
+  const force = options.force ?? false
+  const shouldRelink =
+    force ||
+    !plugin.settings.hostedSessionToken ||
+    sessionExpiresSoon(plugin.settings.hostedSessionExpiresAt)
+
+  if (!shouldRelink) {
+    return true
+  }
+
+  try {
+    const session = await createHostedSession(
+      plugin.settings.serverUrl,
+      email,
+      plugin.settings.displayName || plugin.settings.hostedAccountDisplayName || email.split('@')[0] || 'Collaborator'
+    )
+    plugin.settings.hostedAccountEmail = session.account.email
+    plugin.settings.hostedSessionToken = session.sessionToken
+    plugin.settings.hostedSessionExpiresAt = session.expiresAt
+    if (session.account.displayName) {
+      plugin.settings.hostedAccountDisplayName = session.account.displayName
+      if (!plugin.settings.displayName) {
+        plugin.settings.displayName = session.account.displayName
+      }
+    }
+    await plugin.saveSettings()
+    return true
+  } catch {
+    return false
+  }
 }
 
 export async function createHostedSession(

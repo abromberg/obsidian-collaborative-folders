@@ -6,7 +6,9 @@ import {
   createHostedPortalSession,
   getHostedAuthMe,
   createInvite,
+  previewInvite,
   redeemInvite,
+  silentHostedRelink,
 } from '../utils/auth.js'
 import { HOSTED_SESSION_HEADER, PROTOCOL_HEADER, PROTOCOL_V2 } from '@obsidian-teams/shared'
 
@@ -107,6 +109,79 @@ test('createInvite and redeemInvite include hosted session context when provided
     const redeemBody = JSON.parse(String(calls[1].init?.body)) as { hostedSessionToken?: string }
     assert.equal(redeemHeaders[HOSTED_SESSION_HEADER], 'hosted-session-1')
     assert.equal(redeemBody.hostedSessionToken, 'hosted-session-1')
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('previewInvite fetches invite metadata without consuming token', async () => {
+  const originalFetch = globalThis.fetch
+  const calls: Array<{ url: string; init?: RequestInit }> = []
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init })
+    return new Response(
+      JSON.stringify({
+        folderName: 'Shared Folder',
+        ownerDisplayName: 'Owner',
+        expiresAt: '2026-03-01T00:00:00.000Z',
+        remainingUses: 1,
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    )
+  }) as typeof fetch
+
+  try {
+    const payload = await previewInvite('https://teams.example.com', 'invite-token-1')
+    assert.equal(payload.folderName, 'Shared Folder')
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].url, 'https://teams.example.com/api/invite/preview?token=invite-token-1')
+    const headers = calls[0].init?.headers as Record<string, string>
+    assert.equal(headers[PROTOCOL_HEADER], PROTOCOL_V2)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('silentHostedRelink refreshes hosted session from stored email', async () => {
+  const originalFetch = globalThis.fetch
+
+  globalThis.fetch = (async () => {
+    return new Response(
+      JSON.stringify({
+        account: {
+          id: 'acct-1',
+          email: 'owner@example.com',
+          displayName: 'Owner',
+          status: 'active',
+        },
+        sessionToken: 'session-token-2',
+        expiresAt: '2026-04-01T00:00:00.000Z',
+      }),
+      { status: 200, headers: { 'Content-Type': 'application/json' } }
+    )
+  }) as typeof fetch
+
+  const pluginStub = {
+    settings: {
+      deploymentMode: 'hosted-service' as const,
+      hostedAccountEmail: 'owner@example.com',
+      hostedAccountDisplayName: '',
+      hostedSessionToken: '',
+      hostedSessionExpiresAt: '',
+      displayName: 'Owner',
+      serverUrl: 'https://teams.example.com',
+      folderTokens: {},
+      folderRefreshTokens: {},
+    },
+    saveSettings: async () => {},
+  }
+
+  try {
+    const relinked = await silentHostedRelink(pluginStub as any, { force: true })
+    assert.equal(relinked, true)
+    assert.equal(pluginStub.settings.hostedSessionToken, 'session-token-2')
+    assert.equal(pluginStub.settings.hostedSessionExpiresAt, '2026-04-01T00:00:00.000Z')
   } finally {
     globalThis.fetch = originalFetch
   }

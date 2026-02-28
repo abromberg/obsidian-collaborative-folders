@@ -1,6 +1,7 @@
-import { App, PluginSettingTab, Setting } from 'obsidian'
+import { App, Notice, PluginSettingTab, Setting, requestUrl } from 'obsidian'
 import { DEFAULT_SERVER_URL } from '@obsidian-teams/shared'
 import type ObsidianTeamsPlugin from './main'
+import { JoinFolderModal } from './ui/join-modal'
 
 export const SELF_DEPLOY_DEFAULT_SERVER_URL = 'http://localhost:1234'
 
@@ -10,6 +11,8 @@ export interface ObsidianTeamsSettings {
   deploymentMode: DeploymentMode
   serverUrl: string
   displayName: string
+  onboardingComplete: boolean
+  pendingInviteToken: string
   clientId: string
   debugLogging: boolean
   hostedAccountEmail: string
@@ -26,6 +29,8 @@ export const DEFAULT_SETTINGS: ObsidianTeamsSettings = {
   deploymentMode: 'hosted-service',
   serverUrl: DEFAULT_SERVER_URL,
   displayName: '',
+  onboardingComplete: false,
+  pendingInviteToken: '',
   clientId: '',
   debugLogging: false,
   hostedAccountEmail: '',
@@ -73,6 +78,29 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
     }
 
     await this.saveAndRefresh()
+  }
+
+  private renderPendingInviteBanner(containerEl: HTMLElement): void {
+    const pendingToken = this.plugin.settings.pendingInviteToken.trim()
+    if (!pendingToken) return
+
+    const banner = containerEl.createDiv({ cls: 'obsidian-teams-pending-invite-banner' })
+    banner.createEl('p', {
+      text: 'You have a pending folder invite. Complete setup below, then click "Join now".',
+    })
+
+    new Setting(banner)
+      .addButton((btn) => {
+        btn.setButtonText('Join now').setCta().onClick(() => {
+          new JoinFolderModal(this.app, this.plugin, { inviteToken: pendingToken }).open()
+        })
+      })
+      .addButton((btn) => {
+        btn.setButtonText('Dismiss').onClick(async () => {
+          this.plugin.settings.pendingInviteToken = ''
+          await this.saveAndRefresh()
+        })
+      })
   }
 
   private renderIdentitySettings(containerEl: HTMLElement): void {
@@ -195,6 +223,42 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
           await this.saveAndRefresh()
         })
       })
+
+    new Setting(containerEl)
+      .setName('Test connection')
+      .setDesc('Verify your server is reachable')
+      .addButton((btn) => {
+        btn.setButtonText('Test').onClick(async () => {
+          const serverUrl = normalizeUrl(this.plugin.settings.serverUrl || '')
+          if (!serverUrl) {
+            new Notice('Set a server URL first')
+            return
+          }
+
+          btn.setButtonText('Testing...')
+          btn.setDisabled(true)
+          try {
+            const response = await requestUrl({
+              url: `${serverUrl}/health`,
+              method: 'GET',
+              throw: false,
+            })
+
+            const payload = response.json as { status?: string; version?: string } | undefined
+            if (response.status >= 200 && response.status < 300 && payload?.status === 'ok') {
+              const versionSuffix = payload.version ? ` (v${payload.version})` : ''
+              new Notice(`Connected to server${versionSuffix}`)
+            } else {
+              new Notice('Server responded but returned unexpected data')
+            }
+          } catch {
+            new Notice(`Cannot reach ${serverUrl}. Check the URL and ensure the server is running.`)
+          } finally {
+            btn.setButtonText('Test')
+            btn.setDisabled(false)
+          }
+        })
+      })
   }
 
   display(): void {
@@ -202,6 +266,7 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
     containerEl.empty()
 
     containerEl.createEl('h2', { text: 'Collaborative Folders' })
+    this.renderPendingInviteBanner(containerEl)
 
     new Setting(containerEl)
       .setName('Service mode')

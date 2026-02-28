@@ -90,6 +90,14 @@ export interface RedeemResponse {
   serverUrl: string
 }
 
+/** Server response when previewing an invite without consuming it. */
+export interface InvitePreviewResponse {
+  folderName: string
+  ownerDisplayName: string
+  expiresAt: string | null
+  remainingUses: number
+}
+
 export interface HostedAccountProfile {
   id: string
   email: string
