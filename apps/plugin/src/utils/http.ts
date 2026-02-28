@@ -75,7 +75,8 @@ function makeResponseFromRequestUrl(payload: {
   const ok = status >= 200 && status < 300
   const textValue = typeof payload.text === 'string' ? payload.text : ''
   const arrayBufferValue = asArrayBuffer(payload.arrayBuffer)
-  const jsonValue = payload.json
+  let jsonResolved = false
+  let jsonCached: unknown
 
   return {
     ok,
@@ -88,7 +89,17 @@ function makeResponseFromRequestUrl(payload: {
       return asArrayBuffer(arrayBufferValue)
     },
     async json() {
-      if (typeof jsonValue !== 'undefined' && jsonValue !== null) return jsonValue
+      if (!jsonResolved) {
+        // Obsidian's requestUrl response may expose `json` via a getter that throws
+        // for non-JSON bodies (for example, encrypted blob bytes). Keep this lazy so
+        // binary/text callers can still use `arrayBuffer()`/`text()` safely.
+        jsonCached = payload.json
+        jsonResolved = true
+      }
+
+      if (typeof jsonCached !== 'undefined' && jsonCached !== null) {
+        return jsonCached
+      }
       return jsonParse(textValue)
     },
   }
