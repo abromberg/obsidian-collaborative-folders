@@ -51,6 +51,7 @@ const PROTOCOL_GATE_ENABLED = true
 const PLUGIN_INSTALL_URL = 'https://obsidian.md/plugins?id=collaborative-folders'
 const BRAT_PLUGIN_URL = 'https://obsidian.md/plugins?id=brat'
 const GITHUB_SOURCE_URL = 'https://github.com/abromberg/obsidian-collaborative-folders'
+const OBSIDIAN_RELEASES_PR_URL = 'https://github.com/obsidianmd/obsidian-releases/pull/10628'
 const FAVICON_DATA_URL =
   'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270%200%20100%20100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E%F0%9F%93%99%3C/text%3E%3C/svg%3E'
 const COPYRIGHT_YEAR = new Date().getFullYear()
@@ -586,6 +587,7 @@ app.get('/', (_req, res) => {
         transform: rotate(8.5deg);
         transform-origin: 22% 44%;
         transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+        animation: agent-sticker-float 3.5s ease-in-out infinite;
         user-select: none;
       }
       .agent-sticker-icon {
@@ -635,6 +637,10 @@ app.get('/', (_req, res) => {
           transform: translateY(-1px) rotate(7deg);
         }
       }
+      @keyframes agent-sticker-float {
+        0%, 100% { transform: rotate(8.5deg); }
+        50% { transform: rotate(7.5deg) translateY(-1px); }
+      }
       .agent-popup {
         position: absolute;
         left: 0;
@@ -643,13 +649,15 @@ app.get('/', (_req, res) => {
         margin: 0;
         padding: 11px 13px;
         border: 1px solid #ddd2ba;
-        border-radius: 12px;
+        border-radius: 14px;
         background: #fbf8ef;
         color: #5f5441;
         font-family: "JetBrains Mono", "SFMono-Regular", "Menlo", "Monaco", "Cascadia Mono", "Consolas", "Liberation Mono", "Courier New", monospace;
         font-size: 14px;
         line-height: 1.45;
-        box-shadow: 0 18px 36px rgba(47, 35, 15, 0.13);
+        box-shadow:
+          0 18px 40px rgba(39, 30, 11, 0.12),
+          0 2px 6px rgba(39, 30, 11, 0.06);
         z-index: 2;
       }
       .agent-popup::before {
@@ -663,6 +671,22 @@ app.get('/', (_req, res) => {
         border-left: 1px solid #ddd2ba;
         border-top: 1px solid #ddd2ba;
         transform: rotate(45deg);
+      }
+      .agent-note[open] > .agent-popup {
+        animation: agent-popup-enter 300ms cubic-bezier(0.22, 1, 0.36, 1);
+      }
+      @keyframes agent-popup-enter {
+        from {
+          opacity: 0;
+          transform: translateY(8px) scale(0.95);
+        }
+        60% {
+          opacity: 1;
+          transform: translateY(-1px) scale(1.005);
+        }
+        to {
+          transform: translateY(0) scale(1);
+        }
       }
       .lead {
         margin: 0;
@@ -1028,6 +1052,11 @@ app.get('/', (_req, res) => {
                 <code>https://collaborativefolders.com</code> or set your own <code>Server URL</code>.
               </li>
             </ol>
+            <p class="install-note">
+              p.s. if you want Obsidian to prioritize this plugin maybe add a reaction or drop a polite comment on
+              <a class="accent-link" href="${OBSIDIAN_RELEASES_PR_URL}" target="_blank" rel="noopener noreferrer">${OBSIDIAN_RELEASES_PR_URL}</a>
+              ... or ping any friends who work there :)
+            </p>
             <div class="install-modal-actions">
               <button class="button secondary" type="submit" value="close">Close</button>
             </div>
@@ -1556,6 +1585,11 @@ app.get('/pricing', (_req, res) => {
                 <code>https://collaborativefolders.com</code> or set your own <code>Server URL</code>.
               </li>
             </ol>
+            <p class="install-note">
+              p.s. if you want Obsidian to prioritize this plugin maybe add a reaction or drop a polite comment on
+              <a class="accent-link" href="${OBSIDIAN_RELEASES_PR_URL}" target="_blank" rel="noopener noreferrer">${OBSIDIAN_RELEASES_PR_URL}</a>
+              ... or ping any friends who work there :)
+            </p>
             <div class="install-modal-actions">
               <button class="button secondary" type="submit" value="close">Close</button>
             </div>
@@ -1563,7 +1597,7 @@ app.get('/pricing', (_req, res) => {
         </dialog>
 
         <p class="meta">
-          Limits shown above reflect current hosted defaults as of ${LEGAL_LAST_UPDATED}. Hosted terms may change prospectively with notice. See
+          Limits shown above reflect current hosted defaults as of ${LEGAL_LAST_UPDATED}. Terms may change. See
           <a href="/privacy">Privacy Policy</a>
           and
           <a href="/terms">Terms of Service</a>.

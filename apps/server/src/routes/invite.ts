@@ -28,6 +28,7 @@ const INVITE_CREATE_MAX_PER_HOUR = Number(process.env.INVITE_CREATE_MAX_PER_HOUR
 const INVITE_REDEEM_MAX_PER_HOUR = Number(process.env.INVITE_REDEEM_MAX_PER_HOUR || 200)
 const BRAT_PLUGIN_URL = 'https://obsidian.md/plugins?id=brat'
 const GITHUB_SOURCE_URL = 'https://github.com/abromberg/obsidian-collaborative-folders'
+const OBSIDIAN_RELEASES_PR_URL = 'https://github.com/obsidianmd/obsidian-releases/pull/10628'
 const FAVICON_DATA_URL =
   'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270%200%20100%20100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E%F0%9F%93%99%3C/text%3E%3C/svg%3E'
 
@@ -560,54 +561,78 @@ inviteRouter.get('/redeem', (req: Request, res: Response) => {
         font-size: 16px;
       }
       .accent-link {
-        color: #8f5b00;
+        color: #6b5530;
+        font-weight: 700;
+        text-decoration-color: #b6883a;
+        text-decoration-thickness: 2px;
+        text-underline-offset: 2px;
+      }
+      .accent-link:hover {
+        color: #4f3f24;
       }
       .install-modal {
-        border: none;
-        border-radius: 20px;
-        width: min(560px, calc(100vw - 24px));
-        max-height: min(80vh, 700px);
+        width: min(640px, calc(100vw - 32px));
+        max-height: calc(100dvh - 20px);
+        border: 1px solid #d6ccb4;
+        border-radius: 18px;
         padding: 0;
-        background: #f6f2e7;
+        background: var(--surface);
         color: var(--text-strong);
-        box-shadow: 0 32px 60px rgba(0, 0, 0, 0.38);
+        box-shadow:
+          0 30px 90px rgba(35, 26, 8, 0.3),
+          0 2px 10px rgba(35, 26, 8, 0.12);
       }
       .install-modal::backdrop {
-        background: rgba(8, 7, 5, 0.68);
+        background: rgba(53, 46, 34, 0.45);
+        backdrop-filter: blur(2px);
       }
       .install-modal-inner {
-        display: flex;
-        flex-direction: column;
-        gap: 12px;
+        margin: 0;
         padding: 24px;
+        max-height: calc(100dvh - 20px);
+        overflow-y: auto;
       }
       .install-modal-title {
         margin: 0;
-        font-size: 28px;
+        font-size: clamp(26px, 4vw, 32px);
         line-height: 1.05;
+        letter-spacing: -0.015em;
       }
       .install-modal-lead {
-        margin: 0;
-        color: #594f3f;
+        margin: 10px 0 0;
+        color: #5f5748;
+        line-height: 1.55;
       }
       .install-steps {
-        margin: 0;
-        padding-left: 20px;
-        display: grid;
-        gap: 10px;
-        color: #3a3328;
-        font-size: 15px;
+        margin: 18px 0 0;
+        padding-left: 22px;
+        color: #4f4738;
+        line-height: 1.55;
       }
-      .install-steps code {
-        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
-        font-size: 0.92em;
-        background: rgba(0, 0, 0, 0.08);
-        border: 1px solid rgba(0, 0, 0, 0.16);
-        border-radius: 6px;
-        padding: 2px 6px;
+      .install-steps li + li {
+        margin-top: 9px;
+      }
+      .install-steps code,
+      .install-note code {
+        border: 1px solid #d9cfb8;
+        border-radius: 8px;
+        background: #f4eddb;
+        padding: 1px 6px;
+        font-size: 13px;
+        font-family: "JetBrains Mono", "SFMono-Regular", "Menlo", "Monaco", "Cascadia Mono", "Consolas", "Liberation Mono", "Courier New", monospace;
+      }
+      .install-note {
+        margin: 14px 0 0;
+        padding: 12px 14px;
+        border: 1px solid #ddd2ba;
+        border-radius: 12px;
+        background: #f5efdf;
+        color: #5a513f;
+        font-size: 14px;
+        line-height: 1.55;
       }
       .install-modal-actions {
-        margin-top: 4px;
+        margin-top: 18px;
         display: flex;
         justify-content: flex-end;
       }
@@ -644,7 +669,7 @@ inviteRouter.get('/redeem', (req: Request, res: Response) => {
           font-size: 14px;
         }
       }
-      @media (max-width: 480px) {
+      @media (max-width: 520px) {
         .actions > * {
           width: 100%;
           justify-content: center;
@@ -689,8 +714,13 @@ inviteRouter.get('/redeem', (req: Request, res: Response) => {
                 <code>https://collaborativefolders.com</code> or set your own <code>Server URL</code>.
               </li>
             </ol>
+            <p class="install-note">
+              p.s. if you want Obsidian to prioritize this plugin maybe add a reaction or drop a polite comment on
+              <a class="accent-link" href="${OBSIDIAN_RELEASES_PR_URL}" target="_blank" rel="noopener noreferrer">${OBSIDIAN_RELEASES_PR_URL}</a>
+              ... or ping any friends who work there :)
+            </p>
             <div class="install-modal-actions">
-              <button class="button" type="submit" value="close">Close</button>
+              <button class="button secondary" type="submit" value="close">Close</button>
             </div>
           </form>
         </dialog>
