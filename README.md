@@ -1,19 +1,20 @@
 # Obsidian Collaborative Folders
 
+![Obsidian Collaborative Folders](apps/server/media/collaborativefolders_header.png)
+
 Real-time, multiplayer shared folders and notes for [Obsidian](https://obsidian.md/). Deploy it yourself or use our hosted service — and either way, notes are encrypted end-to-end. Everything you love about Google Docs, but in your lovely local Obsidian instance. Fully MIT-licensed. 
 
 **Warning: Beta software.** This project is still in active development and may contain bugs, breaking changes, data leakage, or data-loss risks; use at your own risk and keep backups of important vaults.
 
-## Demo
-
-<video src="https://collaborativefolders.com/media/collaborativefolders_demo.mp4" controls preload="metadata" width="960"></video>
-
-If the embedded player does not render in your client, watch directly:
-https://collaborativefolders.com/media/collaborativefolders_demo.mp4
-
 After installing the plugin, right click on a folder and select `Share folder...`. Send the invite URL to a friend or teammate and the folder will appear in their vault. You can see each others' cursors in the file and edit collaboratively in realtime. 
 
 As long as Obsidian is open, updates you make will be synced to other people shared on the folder, so feel free to use Claude Code or your favorite AI tools on the shared folders and the changes will propagate automatically.
+
+## Demo
+
+[![Watch the demo](apps/server/media/collaborativefolders_header.png)](apps/server/media/collaborativefolders_demo.mp4)
+
+([Link to demo video](https://collaborativefolders.com/media/collaborativefolders_demo.mp4))
 
 _This is a community plugin maintained by [Andy Bromberg](https://andybromberg.com) at Experimental LLC. Neither Andy nor Experimental LLC are affiliated with Obsidian._
 
