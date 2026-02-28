@@ -1,0 +1,33 @@
+{
+  "name": "@obsidian-teams/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "start": "node dist/index.js",
+    "typecheck": "tsc --noEmit",
+    "test": "JWT_SECRET=test-secret-0123456789abcdef0123456789abcdef node --import tsx --test src/__tests__/*.test.ts"
+  },
+  "dependencies": {
+    "@obsidian-teams/shared": "workspace:*",
+    "better-sqlite3": "^11.0.0",
+    "cors": "^2.8.0",
+    "express": "^4.21.0",
+    "jsonwebtoken": "^9.0.0",
+    "stripe": "^16.0.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.0",
+    "@types/cors": "^2.8.0",
+    "@types/express": "^4.17.0",
+    "@types/express-serve-static-core": "^5.1.1",
+    "@types/jsonwebtoken": "^9.0.0",
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.14",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "name": "@obsidian-teams/plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "node --import tsx --test src/__tests__/*.test.ts"
+  },
+  "dependencies": {
+    "@obsidian-teams/shared": "workspace:*",
+    "lib0": "^0.2.0",
+    "y-codemirror.next": "^0.3.0",
+    "y-indexeddb": "^9.0.0",
+    "y-protocols": "^1.0.0",
+    "yjs": "^13.6.0"
+  },
+  "devDependencies": {
+    "@codemirror/state": "^6.0.0",
+    "@codemirror/view": "^6.0.0",
+    "@types/node": "^22.0.0",
+    "esbuild": "^0.24.0",
+    "obsidian": "latest",
+    "tsx": "^4.19.0",
+    "typescript": "^5.7.0"
+  }
+}

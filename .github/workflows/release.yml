@@ -1,0 +1,62 @@
+name: Release Obsidian Plugin
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Verify tag version matches plugin manifest
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          MANIFEST_VERSION="$(node -e "const fs=require('node:fs');const manifest=JSON.parse(fs.readFileSync('apps/plugin/manifest.json','utf8'));process.stdout.write(manifest.version);")"
+          if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
+            echo "Tag version ($TAG_VERSION) does not match apps/plugin/manifest.json version ($MANIFEST_VERSION)."
+            exit 1
+          fi
+
+      - name: Build shared package
+        run: pnpm --filter @obsidian-teams/shared build
+
+      - name: Build and prepare release artifacts
+        run: pnpm plugin:prepare-release
+
+      - name: Validate release artifacts
+        run: |
+          test -f release/obsidian-plugin/main.js
+          test -f release/obsidian-plugin/manifest.json
+          test -f release/obsidian-plugin/styles.css
+
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release/obsidian-plugin/main.js
+            release/obsidian-plugin/manifest.json
+            release/obsidian-plugin/styles.css
+          fail_on_unmatched_files: true
+          generate_release_notes: true

@@ -1,0 +1,9 @@
+{
+  "id": "collaborative-folders",
+  "name": "Collaborative Folders",
+  "version": "0.1.3",
+  "minAppVersion": "0.16.0",
+  "author": "Andy Bromberg",
+  "description": "Real-time collaborative editing of shared folders across vaults",
+  "isDesktopOnly": false
+}
