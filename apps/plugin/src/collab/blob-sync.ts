@@ -12,6 +12,31 @@ import { httpRequest } from '../utils/http'
 
 const engine = new CryptoEngine()
 
+interface BlobUploadErrorBody {
+  error?: string
+  message?: string
+}
+
+async function readUploadErrorDetail(response: {
+  json: () => Promise<any>
+  text: () => Promise<string>
+}): Promise<string> {
+  const payload = await response
+    .json()
+    .catch(async () => {
+      const text = await response.text().catch(() => '')
+      return { error: text }
+    }) as BlobUploadErrorBody
+
+  if (typeof payload.error === 'string' && payload.error.trim()) {
+    return payload.error.trim()
+  }
+  if (typeof payload.message === 'string' && payload.message.trim()) {
+    return payload.message.trim()
+  }
+  return ''
+}
+
 function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const copy = new Uint8Array(bytes.byteLength)
   copy.set(bytes)
@@ -83,8 +108,17 @@ export async function uploadBlob(
     body: toArrayBuffer(encrypted.ciphertext),
   })
 
-  if (!response.ok && response.status !== 409) {
-    throw new Error(`Blob upload failed: HTTP ${response.status}`)
+  if (!response.ok) {
+    const detail = await readUploadErrorDetail(response)
+
+    if (response.status === 409) {
+      if (detail.toLowerCase().includes('already exists')) {
+        return hash
+      }
+      throw new Error(detail ? `Blob upload failed: ${detail}` : 'Blob upload failed: HTTP 409')
+    }
+
+    throw new Error(detail ? `Blob upload failed: ${detail}` : `Blob upload failed: HTTP ${response.status}`)
   }
 
   return hash
