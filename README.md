@@ -49,19 +49,19 @@ This section is intended to satisfy Obsidian's disclosure expectations for commu
 
 - Network use: The plugin makes outbound HTTPS/WSS requests to the configured `Server URL` for invite creation/redeem, token refresh, folder membership APIs, key lifecycle APIs, realtime relay (encrypted document updates/snapshots plus awareness signaling), and encrypted blob upload/download.
 - Account requirements:
-  - Self-hosted mode: no central vendor account is required by protocol; access is capability-based via folder-scoped invite/token flows.
+  - Self-hosted mode: no account is required
   - Managed service mode (`https://collaborativefolders.com`): hosted account linking is required for invite redemption and billing access; each collaborator needs their own active subscription.
 - Payments and paid features:
-  - Self-hosted mode: no payments are required to run this code.
-  - Managed service mode (current defaults): no free tier, `$9 USD / subscribed user / month`, owner-level `3GB` total storage cap across owned shared folders, and `25MB` max uploaded blob size.
+  - Self-hosted mode: no payments are required to run this code or use the product.
+  - Managed service mode: no free tier, `$9 USD / subscribed user / month`, owner-level `3GB` total storage cap across owned shared folders, and `25MB` max uploaded blob size.
   - Managed service mode: when a hosted subscription becomes inactive (for example after cancellation period end), collaborator access is automatically offboarded (editor memberships removed, pending invites revoked). Existing local vault copies remain local but stop syncing.
 - External file access:
   - Reads/writes only files and folders in the active Obsidian vault via Obsidian APIs.
   - Does not intentionally access files outside the vault.
-- Ads: no in-plugin advertising.
+- Ads: no advertising.
 - Telemetry/analytics:
   - Plugin: no third-party analytics SDK or telemetry collector is integrated.
-  - Server: writes security/audit events (for auth denials, invite/member mutations, rate-limit events, blob access, token lifecycle events) and exposes aggregate counters at `/health/security`.
+  - Server: writes security/audit events (for auth denials, invite/member mutations, rate-limit events, blob access, token lifecycle events)
 - Data processed by the collaboration backend:
   - Control-plane metadata: folder IDs, room names (doc room names encode relative paths), member/client IDs, display names, roles, invite metadata (including optional invite labels), token-version state, and timestamps.
   - Credential artifacts: hashed invite tokens, hashed refresh tokens (with token families), revoked access-token JTIs, one-time WS tickets (stored hashed in-memory).
@@ -71,7 +71,6 @@ This section is intended to satisfy Obsidian's disclosure expectations for commu
 - Retention and deletion:
   - Self-hosted mode: you (the operator) control retention/deletion of DB rows and blob files.
   - Managed service mode: policy is documented at https://collaborativefolders.com/privacy
-  - Note: this repo currently does not include an automatic data-pruning job; expired/revoked records may persist until operator cleanup.
 - Privacy policy:
   - Self-hosted mode: governed by the operator of the server you deploy.
   - Managed service mode: https://collaborativefolders.com/privacy
