@@ -39,6 +39,10 @@ interface AccountBillingRow {
   subscription_status: string
 }
 
+interface AccountProfileRow {
+  email_norm: string
+}
+
 interface StripeSessionResponse {
   id: string
   url?: string
@@ -818,6 +822,17 @@ hostedBillingRouter.post(
 
     const db = getDb()
     const access = resolveBillingAccount(db, actor.accountId)
+    const accountProfile = db
+      .prepare(
+        `
+        SELECT email_norm
+        FROM hosted_accounts
+        WHERE id = ?
+        LIMIT 1
+      `
+      )
+      .get(actor.accountId) as AccountProfileRow | undefined
+    const checkoutCustomerEmail = access.stripe_customer_id ? undefined : accountProfile?.email_norm || undefined
 
     const successUrl = req.body.successUrl?.trim() || buildBillingReturnUrl('success')
     const cancelUrl = req.body.cancelUrl?.trim() || buildBillingReturnUrl('cancel')
@@ -834,6 +849,7 @@ hostedBillingRouter.post(
       'line_items[0][price_data][product_data][name]': 'Collaborative Folders Subscription',
       'line_items[0][price_data][recurring][interval]': 'month',
       customer: access.stripe_customer_id,
+      customer_email: checkoutCustomerEmail,
     })
 
     const idempotencyKey = crypto

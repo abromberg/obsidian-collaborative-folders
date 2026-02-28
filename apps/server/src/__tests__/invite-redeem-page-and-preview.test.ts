@@ -178,12 +178,10 @@ test('GET /invite/redeem renders deep-link page for valid invite token', async (
   const html = String(res.body || '')
   assert.equal(res.statusCode, 200)
   assert.match(html, /Opening Obsidian/i)
-  assert.match(html, /How to install/i)
-  assert.match(html, /requires BRAT/i)
-  assert.match(
-    html,
-    /https:\/\/github\.com\/abromberg\/obsidian-collaborative-folders#installing-before-obsidian-community-approval/
-  )
+  assert.match(html, /Install plugin/i)
+  assert.match(html, /Install With BRAT/i)
+  assert.match(html, /https:\/\/obsidian\.md\/plugins\?id=brat/i)
+  assert.match(html, /https:\/\/github\.com\/abromberg\/obsidian-collaborative-folders/i)
 })
 
 test('GET /invite/redeem shows error page for expired invite and does not deep-link', async () => {

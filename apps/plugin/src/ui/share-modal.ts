@@ -292,7 +292,7 @@ export class ShareFolderModal extends Modal {
     })
     new Setting(contentEl)
       .setName('Invite label (optional)')
-      .setDesc('Label is for your own tracking (for example: Andy).')
+      .setDesc('Label is for your own tracking.')
       .addText((text) => {
         text.setPlaceholder('Andy')
         text.setValue(this.inviteLabel)

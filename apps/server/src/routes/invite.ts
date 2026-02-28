@@ -26,8 +26,8 @@ const MAX_INVITE_EXPIRY_HOURS = Number(process.env.INVITE_MAX_EXPIRY_HOURS || 24
 const MAX_INVITE_USES_LIMIT = Number(process.env.INVITE_MAX_USES_LIMIT || 100)
 const INVITE_CREATE_MAX_PER_HOUR = Number(process.env.INVITE_CREATE_MAX_PER_HOUR || 100)
 const INVITE_REDEEM_MAX_PER_HOUR = Number(process.env.INVITE_REDEEM_MAX_PER_HOUR || 200)
-const PLUGIN_INSTALL_URL =
-  'https://github.com/abromberg/obsidian-collaborative-folders#installing-before-obsidian-community-approval'
+const BRAT_PLUGIN_URL = 'https://obsidian.md/plugins?id=brat'
+const GITHUB_SOURCE_URL = 'https://github.com/abromberg/obsidian-collaborative-folders'
 const FAVICON_DATA_URL =
   'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270%200%20100%20100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E%F0%9F%93%99%3C/text%3E%3C/svg%3E'
 
@@ -391,9 +391,9 @@ inviteRouter.get('/redeem', (req: Request, res: Response) => {
   const deepLink = `obsidian://teams-join?token=${encodeURIComponent(inviteToken)}`
   const escapedDeepLink = escapeHtml(deepLink)
   const escapedInviteToken = escapeHtml(inviteToken)
-  const escapedInstallUrl = escapeHtml(PLUGIN_INSTALL_URL)
+  const escapedBratPluginUrl = escapeHtml(BRAT_PLUGIN_URL)
+  const escapedGithubSourceUrl = escapeHtml(GITHUB_SOURCE_URL)
   const deepLinkLiteral = JSON.stringify(deepLink)
-  const installUrlLiteral = JSON.stringify(PLUGIN_INSTALL_URL)
 
   res
     .status(200)
@@ -559,27 +559,61 @@ inviteRouter.get('/redeem', (req: Request, res: Response) => {
         color: #736a58;
         font-size: 16px;
       }
-      .install-help {
-        margin: 10px 0 0;
-        color: #6f6553;
-        font-size: 14px;
-        line-height: 1.4;
-      }
-      .plugin-help {
-        margin-top: 10px;
-        border-top: 1px solid var(--line);
-        padding-top: 10px;
-      }
-      .plugin-help summary {
-        cursor: pointer;
-        font-weight: 700;
-      }
-      .plugin-help p {
-        margin: 9px 0 0;
-        color: var(--text-soft);
-      }
-      .plugin-help a {
+      .accent-link {
         color: #8f5b00;
+      }
+      .install-modal {
+        border: none;
+        border-radius: 20px;
+        width: min(560px, calc(100vw - 24px));
+        max-height: min(80vh, 700px);
+        padding: 0;
+        background: #f6f2e7;
+        color: var(--text-strong);
+        box-shadow: 0 32px 60px rgba(0, 0, 0, 0.38);
+      }
+      .install-modal::backdrop {
+        background: rgba(8, 7, 5, 0.68);
+      }
+      .install-modal-inner {
+        display: flex;
+        flex-direction: column;
+        gap: 12px;
+        padding: 24px;
+      }
+      .install-modal-title {
+        margin: 0;
+        font-size: 28px;
+        line-height: 1.05;
+      }
+      .install-modal-lead {
+        margin: 0;
+        color: #594f3f;
+      }
+      .install-steps {
+        margin: 0;
+        padding-left: 20px;
+        display: grid;
+        gap: 10px;
+        color: #3a3328;
+        font-size: 15px;
+      }
+      .install-steps code {
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 0.92em;
+        background: rgba(0, 0, 0, 0.08);
+        border: 1px solid rgba(0, 0, 0, 0.16);
+        border-radius: 6px;
+        padding: 2px 6px;
+      }
+      .install-modal-actions {
+        margin-top: 4px;
+        display: flex;
+        justify-content: flex-end;
+      }
+      .install-modal-actions .button {
+        font-size: 16px;
+        padding: 10px 16px;
       }
       @media (max-width: 800px) {
         .card {
@@ -616,6 +650,12 @@ inviteRouter.get('/redeem', (req: Request, res: Response) => {
           justify-content: center;
           text-align: center;
         }
+        .install-modal-inner {
+          padding: 18px;
+        }
+        .install-modal-actions .button {
+          width: 100%;
+        }
       }
     </style>
   </head>
@@ -627,14 +667,33 @@ inviteRouter.get('/redeem', (req: Request, res: Response) => {
         <p class="status"><span class="status-dot" aria-hidden="true"></span><span id="status-text">Trying to launch the app now.</span></p>
         <div class="actions">
           <a class="button primary" href="${escapedDeepLink}" id="open-obsidian">Open in Obsidian</a>
-          <button type="button" id="install-plugin">How to install</button>
+          <button type="button" id="install-plugin">Install plugin</button>
         </div>
-        <p class="install-help">This plugin requires BRAT to install while awaiting Obsidian community approval.</p>
-        <details class="plugin-help" id="plugin-not-installed">
-          <summary>Plugin not installed?</summary>
-          <p>Install it with BRAT first, then return to this page and click "Open in Obsidian".</p>
-          <p><a href="${escapedInstallUrl}" target="_blank" rel="noopener noreferrer">Open BRAT install instructions</a></p>
-        </details>
+        <dialog class="install-modal" id="install-modal" aria-labelledby="install-modal-title">
+          <form method="dialog" class="install-modal-inner">
+            <h2 class="install-modal-title" id="install-modal-title">Install With BRAT</h2>
+            <p class="install-modal-lead">
+              The valiant Obsidian plugin reviewing team is facing an onslaught of submissions. It may be weeks or months until they get to this one and add it to the real directory. Until then, you can install it with a helper plugin called BRAT.
+            </p>
+            <ol class="install-steps">
+              <li>
+                Install BRAT
+                by going to <a class="accent-link" href="${escapedBratPluginUrl}" target="_blank" rel="noopener noreferrer">this link</a> or opening <code>Settings -> Community plugins</code> and searching for it.
+                (Enable Community plugins first if needed.)
+              </li>
+              <li>Toggle BRAT on in your Community plugins list.</li>
+              <li>Open BRAT settings and click <code>Add beta plugin</code>.</li>
+              <li>Paste <code>${escapedGithubSourceUrl}</code> and click <code>Add</code>.</li>
+              <li>
+                Open <code>Collaborative Folders</code> settings, set your display name, then either keep
+                <code>https://collaborativefolders.com</code> or set your own <code>Server URL</code>.
+              </li>
+            </ol>
+            <div class="install-modal-actions">
+              <button class="button" type="submit" value="close">Close</button>
+            </div>
+          </form>
+        </dialog>
         <div class="label">Invite token</div>
         <div class="token-row">
           <input id="invite-token" readonly value="${escapedInviteToken}">
@@ -645,27 +704,29 @@ inviteRouter.get('/redeem', (req: Request, res: Response) => {
     </div>
     <script>
       const deepLink = ${deepLinkLiteral}
-      const installUrl = ${installUrlLiteral}
       const tokenInput = document.getElementById('invite-token')
       const copyButton = document.getElementById('copy-token')
       const installButton = document.getElementById('install-plugin')
+      const installModal = document.getElementById('install-modal')
       const statusTextEl = document.getElementById('status-text')
-      const pluginHelpEl = document.getElementById('plugin-not-installed')
 
       const openDeepLink = () => {
         window.location.href = deepLink
       }
 
       window.setTimeout(openDeepLink, 40)
-      window.setTimeout(() => {
-        if (document.visibilityState === 'visible' && pluginHelpEl && 'open' in pluginHelpEl) {
-          pluginHelpEl.open = true
-        }
-      }, 3000)
 
-      installButton?.addEventListener('click', () => {
-        window.open(installUrl, '_blank', 'noopener,noreferrer')
-      })
+      if (installButton instanceof HTMLButtonElement && installModal instanceof HTMLDialogElement) {
+        installButton.addEventListener('click', () => {
+          if (!installModal.open) installModal.showModal()
+        })
+
+        installModal.addEventListener('click', (event) => {
+          if (event.target === installModal && installModal.open) {
+            installModal.close()
+          }
+        })
+      }
 
       copyButton?.addEventListener('click', async () => {
         if (!tokenInput) return

@@ -2,7 +2,6 @@ import { App, Modal, Notice, Setting } from 'obsidian'
 import { DEFAULT_SERVER_URL } from '@obsidian-teams/shared'
 import type ObsidianTeamsPlugin from '../main'
 import { SELF_DEPLOY_DEFAULT_SERVER_URL, type DeploymentMode } from '../settings'
-import { JoinFolderModal } from './join-modal'
 
 export class OnboardingModal extends Modal {
   private plugin: ObsidianTeamsPlugin
@@ -144,7 +143,7 @@ export class OnboardingModal extends Modal {
     this.close()
 
     if (pendingInviteToken) {
-      new JoinFolderModal(this.app, this.plugin, { inviteToken: pendingInviteToken }).open()
+      void this.plugin.attemptInviteJoin(pendingInviteToken)
     }
   }
 

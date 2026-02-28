@@ -26,14 +26,14 @@ import {
   removeFolderMember,
 } from './utils/auth'
 import { ShareFolderModal } from './ui/share-modal'
-import { JoinFolderModal } from './ui/join-modal'
+import { JoinFolderModal, joinSharedFolderByInvite } from './ui/join-modal'
 import { OnboardingModal } from './ui/onboarding-modal'
 import { DashboardModal } from './ui/dashboard-modal'
 import { FolderKeyManager } from './crypto/folder-key-manager'
 import { keyHealthLabel, type KeyHealthState } from './ui/key-health-status'
 import { registerObsidianRequestUrl } from './utils/http'
 import { debugLog, setDebugLogging } from './utils/logger'
-import { friendlyError } from './utils/friendly-errors'
+import { friendlyError, isConfigError, isHostedSessionError, rawErrorMessage } from './utils/friendly-errors'
 
 interface FolderSession {
   fileTree: FileTreeSync
@@ -336,6 +336,70 @@ export default class ObsidianTeamsPlugin extends Plugin {
     return decoded.length > 0 ? decoded : null
   }
 
+  private openPluginSettings(): void {
+    const settingsRoot = (this.app as unknown as {
+      setting?: { open?: () => void; openTabById?: (id: string) => void }
+    }).setting
+    settingsRoot?.open?.()
+    settingsRoot?.openTabById?.('collaborative-folders')
+  }
+
+  private async joinInviteTokenWithRetry(inviteToken: string) {
+    try {
+      return await joinSharedFolderByInvite(this.app, this, inviteToken)
+    } catch (error) {
+      const raw = rawErrorMessage(error, 'Join failed')
+      if (!isHostedSessionError(raw)) {
+        throw error
+      }
+      const relinked = await silentHostedRelink(this, { force: true })
+      if (!relinked) {
+        throw error
+      }
+      return joinSharedFolderByInvite(this.app, this, inviteToken)
+    }
+  }
+
+  async attemptInviteJoin(
+    inviteToken: string,
+    options: { openSettingsOnConfigError?: boolean; suppressSuccessNotice?: boolean } = {}
+  ): Promise<boolean> {
+    const token = inviteToken.trim()
+    if (!token) {
+      new Notice('Invite link is missing token')
+      return false
+    }
+
+    try {
+      const result = await this.joinInviteTokenWithRetry(token)
+      if (this.settings.pendingInviteToken) {
+        this.settings.pendingInviteToken = ''
+        await this.saveSettings()
+      }
+      if (!options.suppressSuccessNotice) {
+        new Notice(`Joined shared folder: ${result.folderName}`)
+      }
+      return true
+    } catch (error) {
+      const raw = rawErrorMessage(error, 'Unknown error')
+      const message = friendlyError(raw)
+
+      if (isConfigError(raw)) {
+        this.settings.pendingInviteToken = token
+        await this.saveSettings()
+        if (options.openSettingsOnConfigError ?? true) {
+          this.openPluginSettings()
+        }
+        new Notice('Configure your account to join the shared folder. Your invite is saved.')
+        return false
+      }
+
+      new Notice(`Failed to join folder: ${message}`)
+      console.error('[teams] Join error:', error)
+      return false
+    }
+  }
+
   private async handleInviteDeepLink(params: ObsidianProtocolData): Promise<void> {
     const inviteToken = this.resolveInviteTokenFromDeepLink(params)
     if (!inviteToken) {
@@ -355,7 +419,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
       return
     }
 
-    new JoinFolderModal(this.app, this, { inviteToken }).open()
+    await this.attemptInviteJoin(inviteToken)
   }
 
   private normalizeBillingStatus(value: string): 'success' | 'cancel' | 'return' {
@@ -494,10 +558,8 @@ export default class ObsidianTeamsPlugin extends Plugin {
       }
 
       if (this.isHostedSubscriptionActive(subscriptionStatus) && this.settings.pendingInviteToken) {
-        new Notice('You have a pending invite. Opening join flow...')
-        new JoinFolderModal(this.app, this, {
-          inviteToken: this.settings.pendingInviteToken,
-        }).open()
+        new Notice('You have a pending invite. Joining now...')
+        await this.attemptInviteJoin(this.settings.pendingInviteToken)
       }
 
       void this.refreshSharedFolders()
