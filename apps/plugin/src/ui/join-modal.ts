@@ -17,6 +17,45 @@ function normalizeFolderPath(value: string): string {
     .join('/')
 }
 
+function addFolderSuffix(path: string, suffix: number): string {
+  if (suffix <= 0) return path
+
+  const lastSlash = path.lastIndexOf('/')
+  const parent = lastSlash >= 0 ? path.slice(0, lastSlash) : ''
+  const leaf = lastSlash >= 0 ? path.slice(lastSlash + 1) : path
+  const suffixedLeaf = `${leaf} (${suffix})`
+  return parent ? `${parent}/${suffixedLeaf}` : suffixedLeaf
+}
+
+async function resolveJoinTargetPath(
+  app: App,
+  preferredPath: string,
+  expectedFolderId: string
+): Promise<string> {
+  const normalizedPreferredPath = normalizeFolderPath(preferredPath)
+  if (!normalizedPreferredPath) {
+    throw new Error('Invite response missing folder name')
+  }
+
+  for (let suffix = 0; suffix < 1_000; suffix += 1) {
+    const candidatePath = addFolderSuffix(normalizedPreferredPath, suffix)
+    const existing = app.vault.getAbstractFileByPath(candidatePath)
+    if (!existing) {
+      return candidatePath
+    }
+    if (!(existing instanceof TFolder)) {
+      continue
+    }
+
+    const existingConfig = await readSharedConfigAsync(app.vault, candidatePath)
+    if (existingConfig?.folderId === expectedFolderId) {
+      return candidatePath
+    }
+  }
+
+  throw new Error(`Unable to pick a unique folder path for '${normalizedPreferredPath}'`)
+}
+
 async function ensureFolderHierarchy(app: App, targetPath: string): Promise<void> {
   const segments = normalizeFolderPath(targetPath).split('/').filter(Boolean)
   let currentPath = ''
@@ -72,10 +111,7 @@ export async function joinSharedFolderByInvite(
   await storeAccessToken(plugin, result.folderId, result.accessToken)
   await storeRefreshToken(plugin, result.folderId, result.refreshToken)
 
-  const targetPath = normalizeFolderPath(result.folderName)
-  if (!targetPath) {
-    throw new Error('Invite response missing folder name')
-  }
+  const targetPath = await resolveJoinTargetPath(app, result.folderName, result.folderId)
 
   await ensureFolderHierarchy(app, targetPath)
   await assertNoSharedFolderConflict(app, targetPath, result.folderId)
