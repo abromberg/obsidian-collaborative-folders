@@ -15,6 +15,7 @@ import type {
   HostedPortalSessionResponse,
 } from '@obsidian-teams/shared'
 import { PROTOCOL_HEADER, PROTOCOL_V2, HOSTED_SESSION_HEADER } from '@obsidian-teams/shared'
+import { httpRequest } from './http'
 
 const DEFAULT_REFRESH_WINDOW_MS = 5 * 60 * 1000
 const refreshInFlightByFolder = new Map<string, Promise<RefreshResponse>>()
@@ -133,7 +134,7 @@ export async function refreshAccessToken(
   serverUrl: string,
   refreshToken: string
 ): Promise<RefreshResponse> {
-  const response = await fetch(`${serverUrl}/api/auth/refresh`, {
+  const response = await httpRequest(`${serverUrl}/api/auth/refresh`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -245,7 +246,7 @@ export async function createInvite(
     payload.inviteeLabel = options.inviteeLabel.trim()
   }
 
-  const response = await fetch(`${serverUrl}/api/invite`, {
+  const response = await httpRequest(`${serverUrl}/api/invite`, {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
@@ -273,7 +274,7 @@ export async function listFolderMembers(
   folderId: string
 ): Promise<FolderMemberRecord[]> {
   const token = await getFolderBearerToken(plugin, folderId)
-  const response = await fetch(
+  const response = await httpRequest(
     `${plugin.settings.serverUrl}/api/folders/${encodeURIComponent(folderId)}/members`,
     {
       headers: {
@@ -305,7 +306,7 @@ export async function listFolderInvites(
   folderId: string
 ): Promise<FolderInviteRecord[]> {
   const token = await getFolderBearerToken(plugin, folderId)
-  const response = await fetch(
+  const response = await httpRequest(
     `${plugin.settings.serverUrl}/api/folders/${encodeURIComponent(folderId)}/invites`,
     {
       headers: {
@@ -331,7 +332,7 @@ export async function revokeFolderInvite(
   tokenHash: string
 ): Promise<void> {
   const token = await getFolderBearerToken(plugin, folderId)
-  const response = await fetch(
+  const response = await httpRequest(
     `${plugin.settings.serverUrl}/api/folders/${encodeURIComponent(folderId)}/invites/${encodeURIComponent(tokenHash)}`,
     {
       method: 'DELETE',
@@ -356,7 +357,7 @@ export async function removeFolderMember(
   rotate: RotateFolderKeyRequest
 ): Promise<RemoveMemberResponse> {
   const token = await getFolderBearerToken(plugin, folderId)
-  const response = await fetch(
+  const response = await httpRequest(
     `${plugin.settings.serverUrl}/api/folders/${encodeURIComponent(folderId)}/members/${encodeURIComponent(clientId)}`,
     {
       method: 'DELETE',
@@ -395,7 +396,7 @@ export async function redeemInvite(
     headers[HOSTED_SESSION_HEADER] = hostedSessionToken
   }
 
-  const response = await fetch(`${serverUrl}/api/invite/redeem`, {
+  const response = await httpRequest(`${serverUrl}/api/invite/redeem`, {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
@@ -414,7 +415,7 @@ export async function createHostedSession(
   email: string,
   displayName: string
 ): Promise<HostedSessionResponse> {
-  const response = await fetch(`${serverUrl}/api/hosted/auth/session`, {
+  const response = await httpRequest(`${serverUrl}/api/hosted/auth/session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -435,7 +436,7 @@ export async function createHostedCheckoutSession(
   serverUrl: string,
   hostedSessionToken: string
 ): Promise<HostedCheckoutSessionResponse> {
-  const response = await fetch(`${serverUrl}/api/hosted/billing/checkout-session`, {
+  const response = await httpRequest(`${serverUrl}/api/hosted/billing/checkout-session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
@@ -457,7 +458,7 @@ export async function createHostedPortalSession(
   serverUrl: string,
   hostedSessionToken: string
 ): Promise<HostedPortalSessionResponse> {
-  const response = await fetch(`${serverUrl}/api/hosted/billing/portal-session`, {
+  const response = await httpRequest(`${serverUrl}/api/hosted/billing/portal-session`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',

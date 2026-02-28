@@ -8,6 +8,7 @@ import {
 } from '@obsidian-teams/shared'
 import { CryptoEngine, fromBase64, toBase64 } from '../crypto/engine'
 import { FolderKeyManager } from '../crypto/folder-key-manager'
+import { httpRequest } from '../utils/http'
 
 const engine = new CryptoEngine()
 
@@ -68,7 +69,7 @@ export async function uploadBlob(
   const aad = aadBytes(folderId, hash)
   const encrypted = await engine.encryptBytes(new Uint8Array(content), key, { aad })
 
-  const response = await fetch(blobEndpoint(serverUrl, folderId, hash), {
+  const response = await httpRequest(blobEndpoint(serverUrl, folderId, hash), {
     method: 'PUT',
     headers: {
       Authorization: `Bearer ${token}`,
@@ -102,7 +103,7 @@ export async function downloadBlob(
     throw new Error('Blob download failed: missing auth token')
   }
 
-  const response = await fetch(blobEndpoint(serverUrl, folderId, hash), {
+  const response = await httpRequest(blobEndpoint(serverUrl, folderId, hash), {
     headers: {
       Authorization: `Bearer ${token}`,
       [PROTOCOL_HEADER]: PROTOCOL_V2,

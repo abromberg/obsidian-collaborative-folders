@@ -1,5 +1,6 @@
 import * as Y from 'yjs'
 import { IndexeddbPersistence } from 'y-indexeddb'
+import { debugLog } from '../utils/logger'
 
 /**
  * Create an IndexedDB persistence provider for a Y.Doc.
@@ -17,7 +18,7 @@ export function createOfflinePersistence(
   const persistence = new IndexeddbPersistence(roomName, ydoc)
 
   persistence.whenSynced.then(() => {
-    console.log(`[offline] Loaded local state for ${roomName}`)
+    debugLog(`[offline] Loaded local state for ${roomName}`)
   })
 
   return persistence

@@ -11,6 +11,7 @@ export interface ObsidianTeamsSettings {
   serverUrl: string
   displayName: string
   clientId: string
+  debugLogging: boolean
   hostedAccountEmail: string
   hostedAccountDisplayName: string
   hostedSessionToken: string
@@ -26,6 +27,7 @@ export const DEFAULT_SETTINGS: ObsidianTeamsSettings = {
   serverUrl: DEFAULT_SERVER_URL,
   displayName: '',
   clientId: '',
+  debugLogging: false,
   hostedAccountEmail: '',
   hostedAccountDisplayName: '',
   hostedSessionToken: '',
@@ -95,6 +97,18 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
         text.setValue(this.plugin.settings.clientId)
         text.inputEl.setAttr('readonly', 'true')
         text.inputEl.style.opacity = '0.7'
+      })
+
+    new Setting(containerEl)
+      .setName('Debug logging')
+      .setDesc('Enable verbose console logs for troubleshooting sync behavior.')
+      .addToggle((toggle) => {
+        toggle
+          .setValue(this.plugin.settings.debugLogging)
+          .onChange(async (value) => {
+            this.plugin.settings.debugLogging = value
+            await this.plugin.saveSettings()
+          })
       })
   }
 

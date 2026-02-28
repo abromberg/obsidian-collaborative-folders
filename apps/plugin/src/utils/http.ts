@@ -1,0 +1,123 @@
+type ObsidianRequestUrlFn = (request: {
+  url: string
+  method?: string
+  contentType?: string
+  body?: string | ArrayBuffer
+  headers?: Record<string, string>
+  throw?: boolean
+}) => Promise<{
+  status: number
+  headers: Record<string, string>
+  arrayBuffer: ArrayBuffer
+  json: unknown
+  text: string
+}>
+
+interface HttpHeaders {
+  get(name: string): string | null
+}
+
+export interface HttpResponseLike {
+  ok: boolean
+  status: number
+  headers: HttpHeaders
+  json(): Promise<any>
+  text(): Promise<string>
+  arrayBuffer(): Promise<ArrayBuffer>
+}
+
+interface HttpRequestInit {
+  method?: string
+  headers?: Record<string, string>
+  body?: string | ArrayBuffer
+}
+
+declare global {
+  // Set by plugin runtime so modules that do not import `obsidian` can still prefer requestUrl.
+  // eslint-disable-next-line no-var
+  var __obsidianRequestUrl: ObsidianRequestUrlFn | undefined
+}
+
+class HeaderMap implements HttpHeaders {
+  private readonly normalized = new Map<string, string>()
+
+  constructor(headers: Record<string, string>) {
+    for (const [key, value] of Object.entries(headers)) {
+      this.normalized.set(key.toLowerCase(), value)
+    }
+  }
+
+  get(name: string): string | null {
+    return this.normalized.get(name.toLowerCase()) ?? null
+  }
+}
+
+function jsonParse(text: string): any {
+  if (!text.trim()) {
+    throw new Error('Response body is empty')
+  }
+  return JSON.parse(text)
+}
+
+function asArrayBuffer(value: ArrayBuffer): ArrayBuffer {
+  return value.slice(0)
+}
+
+function makeResponseFromRequestUrl(payload: {
+  status: number
+  headers: Record<string, string>
+  arrayBuffer: ArrayBuffer
+  json: unknown
+  text: string
+}): HttpResponseLike {
+  const headers = new HeaderMap(payload.headers || {})
+  const status = payload.status
+  const ok = status >= 200 && status < 300
+  const textValue = typeof payload.text === 'string' ? payload.text : ''
+  const arrayBufferValue = asArrayBuffer(payload.arrayBuffer)
+  const jsonValue = payload.json
+
+  return {
+    ok,
+    status,
+    headers,
+    async text() {
+      return textValue
+    },
+    async arrayBuffer() {
+      return asArrayBuffer(arrayBufferValue)
+    },
+    async json() {
+      if (typeof jsonValue !== 'undefined' && jsonValue !== null) return jsonValue
+      return jsonParse(textValue)
+    },
+  }
+}
+
+export function registerObsidianRequestUrl(requestUrl: ObsidianRequestUrlFn): void {
+  globalThis.__obsidianRequestUrl = requestUrl
+}
+
+function resolveObsidianRequestUrl(): ObsidianRequestUrlFn | null {
+  const fn = globalThis.__obsidianRequestUrl
+  return typeof fn === 'function' ? fn : null
+}
+
+export async function httpRequest(url: string, init: HttpRequestInit = {}): Promise<HttpResponseLike> {
+  const requestUrl = resolveObsidianRequestUrl()
+  if (requestUrl) {
+    const response = await requestUrl({
+      url,
+      method: init.method,
+      headers: init.headers,
+      body: init.body,
+      throw: false,
+    })
+    return makeResponseFromRequestUrl(response)
+  }
+
+  if (typeof globalThis.fetch !== 'function') {
+    throw new Error('No HTTP implementation is available')
+  }
+  return globalThis.fetch(url, init as RequestInit) as Promise<HttpResponseLike>
+}

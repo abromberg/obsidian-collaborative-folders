@@ -37,8 +37,8 @@ export async function joinSharedFolderByInvite(
   await storeRefreshToken(plugin, result.folderId, result.refreshToken)
 
   const folderPath = result.folderName
-  const exists = await app.vault.adapter.exists(folderPath)
-  if (!exists) {
+  const existing = app.vault.getAbstractFileByPath(folderPath)
+  if (!existing) {
     await app.vault.createFolder(folderPath)
   }
 

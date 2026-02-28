@@ -8,6 +8,7 @@ import {
 import { FileTreeSync } from './file-tree-sync'
 import { uploadBlobWithRetry, downloadBlob, computeHash } from './blob-sync'
 import { FolderKeyManager } from '../crypto/folder-key-manager'
+import { debugLog } from '../utils/logger'
 
 /**
  * Watches vault events for a shared folder and syncs changes to the Yjs file tree.
@@ -77,7 +78,7 @@ export class SharedFolderWatcher {
     if (!folder || !(folder instanceof TFolder)) return
 
     const files = this.collectFiles(folder)
-    console.log(`[teams] Scanning ${files.length} existing files in ${this.sharedFolderPath}`)
+    debugLog(`[teams] Scanning ${files.length} existing files in ${this.sharedFolderPath}`)
 
     for (const file of files) {
       if (this.isConfigFile(file.path)) continue
@@ -154,7 +155,7 @@ export class SharedFolderWatcher {
 
     await this.localizeAttachmentsInScannedMarkdown(files)
 
-    console.log(`[teams] Initial scan complete for ${this.sharedFolderPath}`)
+    debugLog(`[teams] Initial scan complete for ${this.sharedFolderPath}`)
   }
 
   /** Recursively collect all files and folders under a folder */
@@ -286,15 +287,15 @@ export class SharedFolderWatcher {
 
     try {
       if (entry.type === 'directory') {
-        const exists = await this.vault.adapter.exists(fullPath)
-        if (!exists) {
+        const existing = this.vault.getAbstractFileByPath(fullPath)
+        if (!existing) {
           await this.vault.createFolder(fullPath)
         }
       } else if (entry.syncMode === 'crdt') {
         // CRDT files get their content from the Yjs doc room, not the file tree.
         // Just create the file if it doesn't exist.
-        const exists = await this.vault.adapter.exists(fullPath)
-        if (!exists) {
+        const existing = this.vault.getAbstractFileByPath(fullPath)
+        if (!(existing instanceof TFile)) {
           await this.vault.create(fullPath, '')
         }
       } else if (entry.syncMode === 'blob' && entry.contentHash) {
@@ -373,13 +374,13 @@ export class SharedFolderWatcher {
         this.keyManager,
         contentHash
       )
-      const exists = await this.vault.adapter.exists(fullPath)
-      if (exists) {
-        await this.vault.adapter.writeBinary(fullPath, decrypted)
+      const existing = this.vault.getAbstractFileByPath(fullPath)
+      if (existing instanceof TFile) {
+        await this.vault.modifyBinary(existing, decrypted)
       } else {
         // Ensure parent directory exists
         const dir = fullPath.substring(0, fullPath.lastIndexOf('/'))
-        if (dir && !(await this.vault.adapter.exists(dir))) {
+        if (dir && !this.vault.getAbstractFileByPath(dir)) {
           await this.vault.createFolder(dir)
         }
         await this.vault.createBinary(fullPath, decrypted)
@@ -394,9 +395,9 @@ export class SharedFolderWatcher {
    * If local content differs, preserve a local conflict copy before overwriting.
    */
   private async applyRemoteBlob(fullPath: string, contentHash: string): Promise<void> {
-    const exists = await this.vault.adapter.exists(fullPath)
-    if (exists) {
-      const localContent = await this.vault.adapter.readBinary(fullPath)
+    const existing = this.vault.getAbstractFileByPath(fullPath)
+    if (existing instanceof TFile) {
+      const localContent = await this.vault.readBinary(existing)
       const localHash = await computeHash(localContent)
       if (localHash === contentHash) return
       await this.preserveConflictCopy(fullPath, localContent)
@@ -427,7 +428,7 @@ export class SharedFolderWatcher {
     let i = 1
     while (true) {
       const candidate = `${base} (conflict ${i})${extension}`
-      if (!(await this.vault.adapter.exists(candidate))) {
+      if (!this.vault.getAbstractFileByPath(candidate)) {
         return candidate
       }
       i += 1

@@ -1,4 +1,4 @@
-import { Plugin, TFolder, TFile, MarkdownView, Notice, setIcon, type ObsidianProtocolData } from 'obsidian'
+import { Plugin, TFolder, TFile, MarkdownView, Notice, setIcon, requestUrl, type ObsidianProtocolData } from 'obsidian'
 import type { Extension } from '@codemirror/state'
 import { DEFAULT_SERVER_URL, docRoomName } from '@obsidian-teams/shared'
 import {
@@ -27,6 +27,8 @@ import { ShareFolderModal } from './ui/share-modal'
 import { JoinFolderModal, joinSharedFolderByInvite } from './ui/join-modal'
 import { FolderKeyManager } from './crypto/folder-key-manager'
 import { keyHealthLabel, type KeyHealthState } from './ui/key-health-status'
+import { registerObsidianRequestUrl } from './utils/http'
+import { debugLog, setDebugLogging } from './utils/logger'
 
 interface FolderSession {
   fileTree: FileTreeSync
@@ -73,6 +75,8 @@ export default class ObsidianTeamsPlugin extends Plugin {
 
   async onload() {
     await this.loadSettings()
+    setDebugLogging(this.settings.debugLogging)
+    registerObsidianRequestUrl(requestUrl)
 
     // Generate client ID on first load
     if (!this.settings.clientId) {
@@ -263,7 +267,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
         })
     })
 
-    console.log('Collaborative Folders plugin loaded')
+    debugLog('Collaborative Folders plugin loaded')
   }
 
   private shouldIgnorePresenceRangeError(event: ErrorEvent): boolean {
@@ -350,14 +354,14 @@ export default class ObsidianTeamsPlugin extends Plugin {
     this.keyManager = null
     this.activeSession = null
     this.editorExtensions.length = 0
-    console.log('Collaborative Folders plugin unloaded')
+    debugLog('Collaborative Folders plugin unloaded')
   }
 
   /** Scan vault for shared folders on startup and start file tree sync */
   private async initializeSharedFolders() {
     this.sharedFolders = await findSharedFolders(this.app.vault)
     if (this.sharedFolders.length > 0) {
-      console.log(`[teams] Found ${this.sharedFolders.length} shared folder(s):`,
+      debugLog(`[teams] Found ${this.sharedFolders.length} shared folder(s):`,
         this.sharedFolders.map(f => f.path))
     }
     this.syncFolderSessions()
@@ -436,7 +440,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
         try {
           const updated = await this.keyManager.ensureOwnerEnvelopeCoverage(folderId)
           if (updated) {
-            console.log(`[teams] Updated key envelope coverage for folder ${folderId}`)
+            debugLog(`[teams] Updated key envelope coverage for folder ${folderId}`)
           }
         } catch (error) {
           console.warn(`[teams] Failed to update key envelope coverage for folder ${folderId}`, error)
@@ -465,7 +469,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
         this.removeBackgroundMirrorsForFolder(folderId, true)
         session.fileTree.destroy()
         this.folderSessions.delete(folderId)
-        console.log(`[teams] Stopped file tree sync for removed folder ${folderId}`)
+        debugLog(`[teams] Stopped file tree sync for removed folder ${folderId}`)
       }
     }
 
@@ -534,7 +538,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
           session.ydoc.transact(() => {
             session.ytext.insert(0, content)
           })
-          console.log(`[teams] Seeded CRDT content for ${relativePath} (${content.length} chars)`)
+          debugLog(`[teams] Seeded CRDT content for ${relativePath} (${content.length} chars)`)
         }
 
         // Wait for initial sync before seeding, otherwise stale local content can race with server state.
@@ -569,7 +573,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
             session.ytext.delete(0, session.ytext.length)
             session.ytext.insert(0, diskContent)
           })
-          console.log(`[teams] Imported external edit for ${relativePath}`)
+          debugLog(`[teams] Imported external edit for ${relativePath}`)
         }
       })
 
@@ -578,7 +582,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
         const result = await this.attachmentLocalizer.localizeForMarkdown(sf.path, file)
         if (result.rewrittenEmbeds === 0) return
 
-        console.log(
+        debugLog(
           `[teams] Localized ${result.localizedAttachments} attachment(s) and rewrote ` +
           `${result.rewrittenEmbeds} embed(s) in ${file.path}`
         )
@@ -601,7 +605,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
       })
 
       this.folderSessions.set(folderId, { fileTree, watcher, keyManager: this.keyManager })
-      console.log(`[teams] Started file tree sync for ${sf.path} (${folderId})`)
+      debugLog(`[teams] Started file tree sync for ${sf.path} (${folderId})`)
     }
   }
 
@@ -712,8 +716,8 @@ export default class ObsidianTeamsPlugin extends Plugin {
     let current = ''
     for (const segment of segments) {
       current = current ? `${current}/${segment}` : segment
-      const exists = await this.app.vault.adapter.exists(current)
-      if (!exists) {
+      const existing = this.app.vault.getAbstractFileByPath(current)
+      if (!existing) {
         await this.app.vault.createFolder(current)
       }
     }
@@ -899,7 +903,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
     if (this.yjsManager) {
       this.updatePresenceDisplay(this.yjsManager.getUsers(session.roomName))
     }
-    console.log(`[teams] Bound collaboration for ${relativePath}`)
+    debugLog(`[teams] Bound collaboration for ${relativePath}`)
   }
 
   /** Keep local file content aligned with CRDT state so subsequent loads are never stale. */
@@ -908,7 +912,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
       const diskContent = await this.app.vault.cachedRead(file)
       if (diskContent === yjsContent) return
       await this.app.vault.modify(file, yjsContent)
-      console.log(`[teams] Reconciled disk content for ${file.path}`)
+      debugLog(`[teams] Reconciled disk content for ${file.path}`)
     } catch (err) {
       console.error(`[teams] Failed to reconcile disk content for ${file.path}:`, err)
     }
@@ -1315,6 +1319,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
   }
 
   async saveSettings() {
+    setDebugLogging(this.settings.debugLogging)
     await this.saveData(this.settings)
   }
 

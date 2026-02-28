@@ -11,6 +11,7 @@ import {
 import { CryptoEngine } from './engine'
 import { KeyStore } from './key-store'
 import { decodeAccessToken } from '../utils/auth'
+import { httpRequest, type HttpResponseLike } from '../utils/http'
 
 type TokenOptions = { forceRefresh?: boolean }
 const ENVELOPE_WAIT_MAX_ATTEMPTS = 8
@@ -23,7 +24,7 @@ type CurrentEnvelopeLookupResponse =
       pending: 'no_active_epoch' | 'missing_envelope'
     }
 
-function assertOk(response: Response, message: string): Promise<void> {
+function assertOk(response: HttpResponseLike, message: string): Promise<void> {
   if (response.ok) return Promise.resolve()
   return response
     .json()
@@ -70,7 +71,7 @@ export class FolderKeyManager {
     const pair = await this.keyStore.getOrCreateClientKeyPair(this.clientId)
     const publicKeyJwk = await this.engine.exportPublicKeyJwk(pair.publicKey)
 
-    const response = await fetch(`${this.serverUrl}/api/folders/${encodeURIComponent(folderId)}/keys/client-key`, {
+    const response = await httpRequest(`${this.serverUrl}/api/folders/${encodeURIComponent(folderId)}/keys/client-key`, {
       method: 'PUT',
       headers: {
         Authorization: `Bearer ${token}`,
@@ -268,7 +269,7 @@ export class FolderKeyManager {
     )
     requestUrl.searchParams.set('allowMissing', '1')
 
-    const response = await fetch(
+    const response = await httpRequest(
       requestUrl.toString(),
       {
         headers: {
@@ -307,7 +308,7 @@ export class FolderKeyManager {
   }
 
   private async fetchClientDirectory(folderId: string, token: string): Promise<ClientKeyDirectoryResponse> {
-    const response = await fetch(
+    const response = await httpRequest(
       `${this.serverUrl}/api/folders/${encodeURIComponent(folderId)}/keys/clients`,
       {
         headers: {
@@ -321,7 +322,7 @@ export class FolderKeyManager {
   }
 
   private async fetchActiveCoverage(folderId: string, token: string): Promise<ActiveKeyCoverageResponse> {
-    const response = await fetch(
+    const response = await httpRequest(
       `${this.serverUrl}/api/folders/${encodeURIComponent(folderId)}/keys/active-coverage`,
       {
         headers: {
@@ -339,7 +340,7 @@ export class FolderKeyManager {
     token: string,
     envelopes: ActiveEnvelopeUpsertRequest['envelopes']
   ): Promise<void> {
-    const response = await fetch(
+    const response = await httpRequest(
       `${this.serverUrl}/api/folders/${encodeURIComponent(folderId)}/keys/active-envelopes`,
       {
         method: 'POST',
@@ -385,7 +386,7 @@ export class FolderKeyManager {
       })
     }
 
-    const rotateResponse = await fetch(`${this.serverUrl}/api/folders/${encodeURIComponent(folderId)}/keys/rotate`, {
+    const rotateResponse = await httpRequest(`${this.serverUrl}/api/folders/${encodeURIComponent(folderId)}/keys/rotate`, {
       method: 'POST',
       headers: {
         Authorization: `Bearer ${token}`,

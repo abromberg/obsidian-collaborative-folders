@@ -15,6 +15,7 @@ import {
 } from '@obsidian-teams/shared'
 import { CryptoEngine, fromBase64, toBase64 } from '../crypto/engine'
 import { FolderKeyManager } from '../crypto/folder-key-manager'
+import { httpRequest } from '../utils/http'
 
 const REMOTE_ORIGIN = 'encrypted-provider-remote'
 const STATUS_CONNECTING = 'connecting'
@@ -216,7 +217,7 @@ export class EncryptedProvider {
   }
 
   private async issueWsTicket(accessToken: string): Promise<string> {
-    const response = await fetch(
+    const response = await httpRequest(
       `${this.options.serverUrl}/api/folders/${encodeURIComponent(this.options.folderId)}/ws-ticket`,
       {
         method: 'POST',
