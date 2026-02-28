@@ -316,10 +316,65 @@ function renderLegalPage(options: {
         color: #7b705d;
         font-size: 13px;
       }
+      @media (max-width: 960px) {
+        body {
+          padding: 18px;
+        }
+      }
       @media (max-width: 800px) {
         .card {
           border-radius: 16px;
           padding: 22px 20px;
+        }
+      }
+      @media (max-width: 640px) {
+        body {
+          padding: 12px;
+        }
+        .top {
+          margin-bottom: 18px;
+        }
+        h1 {
+          font-size: clamp(28px, 10vw, 40px);
+          line-height: 1;
+        }
+        .summary {
+          font-size: 16px;
+        }
+        .content {
+          margin-top: 18px;
+        }
+      }
+      @media (max-width: 520px) {
+        body {
+          padding: 10px;
+        }
+        .card {
+          border-radius: 14px;
+          padding: 18px 14px;
+        }
+        .top {
+          display: grid;
+          gap: 8px;
+        }
+        .back-link {
+          width: 100%;
+          justify-content: center;
+        }
+        .nav {
+          width: 100%;
+        }
+        .nav a {
+          flex: 1 1 0;
+          justify-content: center;
+        }
+        .content h2 {
+          font-size: 17px;
+        }
+        .content p,
+        .content ul {
+          font-size: 15px;
+          line-height: 1.52;
         }
       }
     </style>
@@ -457,7 +512,7 @@ app.get('/', (_req, res) => {
         margin: 0;
         min-height: 100vh;
         display: grid;
-        place-items: center;
+        place-items: start center;
         padding: 26px;
         background:
           radial-gradient(circle at 8% 18%, rgba(204, 134, 0, 0.12) 0, rgba(204, 134, 0, 0) 30%),
@@ -784,6 +839,7 @@ app.get('/', (_req, res) => {
       }
       .install-modal {
         width: min(640px, calc(100vw - 32px));
+        max-height: calc(100dvh - 20px);
         border: 1px solid #d6ccb4;
         border-radius: 18px;
         padding: 0;
@@ -800,6 +856,8 @@ app.get('/', (_req, res) => {
       .install-modal-inner {
         margin: 0;
         padding: 24px;
+        max-height: calc(100dvh - 20px);
+        overflow-y: auto;
       }
       .install-modal-title {
         margin: 0;
@@ -850,6 +908,9 @@ app.get('/', (_req, res) => {
         padding: 10px 16px;
       }
       @media (max-width: 920px) {
+        body {
+          padding: 18px;
+        }
         .card {
           border-radius: 16px;
           padding: 22px 20px;
@@ -863,6 +924,49 @@ app.get('/', (_req, res) => {
         .button {
           font-size: 17px;
           padding: 13px 16px;
+        }
+      }
+      @media (max-width: 640px) {
+        body {
+          padding: 10px;
+        }
+        .card {
+          border-radius: 14px;
+          padding: 18px 14px;
+        }
+        h1 {
+          font-size: clamp(30px, 11vw, 42px);
+          line-height: 0.98;
+        }
+        .lead {
+          font-size: 16px;
+          line-height: 1.5;
+        }
+        .actions {
+          margin-top: 18px;
+          gap: 10px;
+        }
+        .button {
+          font-size: 16px;
+          padding: 12px 14px;
+        }
+        .grid {
+          margin-top: 20px;
+          grid-template-columns: 1fr;
+        }
+        .demo {
+          margin-top: 20px;
+        }
+        .meta {
+          margin-top: 14px;
+          padding: 12px;
+        }
+        .legal-links {
+          gap: 10px 12px;
+        }
+        .actions .button {
+          width: 100%;
+          text-align: center;
         }
       }
       @media (max-width: 520px) {
@@ -1247,6 +1351,7 @@ app.get('/pricing', (_req, res) => {
       }
       .install-modal {
         width: min(640px, calc(100vw - 32px));
+        max-height: calc(100dvh - 20px);
         border: 1px solid #d6ccb4;
         border-radius: 18px;
         padding: 0;
@@ -1263,6 +1368,8 @@ app.get('/pricing', (_req, res) => {
       .install-modal-inner {
         margin: 0;
         padding: 24px;
+        max-height: calc(100dvh - 20px);
+        overflow-y: auto;
       }
       .install-modal-title {
         margin: 0;
@@ -1323,9 +1430,51 @@ app.get('/pricing', (_req, res) => {
         padding: 10px 16px;
       }
       @media (max-width: 800px) {
+        body {
+          padding: 18px;
+        }
         .card {
           border-radius: 16px;
           padding: 22px 20px;
+        }
+      }
+      @media (max-width: 640px) {
+        body {
+          padding: 10px;
+        }
+        .card {
+          border-radius: 14px;
+          padding: 18px 14px;
+        }
+        .top {
+          display: grid;
+          gap: 8px;
+        }
+        .back-link {
+          width: 100%;
+          justify-content: center;
+        }
+        .nav {
+          width: 100%;
+        }
+        .nav a {
+          flex: 1 1 0;
+          justify-content: center;
+        }
+        h1 {
+          margin-top: 12px;
+          font-size: clamp(30px, 11vw, 42px);
+        }
+        .summary {
+          margin-top: 10px;
+          font-size: 16px;
+        }
+        .plans {
+          margin-top: 18px;
+          grid-template-columns: 1fr;
+        }
+        .price {
+          font-size: clamp(32px, 12vw, 44px);
         }
       }
       @media (max-width: 520px) {
