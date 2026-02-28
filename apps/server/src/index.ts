@@ -2,6 +2,8 @@ import express from 'express'
 import cors from 'cors'
 import type { NextFunction, Request, Response } from 'express'
 import { createServer } from 'http'
+import path from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { WebSocketServer } from 'ws'
 import {
   BLOB_AAD_HEADER,
@@ -61,6 +63,9 @@ const HOSTED_DEFAULT_MAX_FILE_SIZE_BYTES = hostedMaxFileSizeBytes()
 const HOSTED_DEFAULT_SEAT_PRICE = formatUsdFromCents(HOSTED_DEFAULT_SEAT_PRICE_CENTS)
 const HOSTED_DEFAULT_STORAGE_CAP = formatSizeLimit(HOSTED_DEFAULT_STORAGE_CAP_BYTES)
 const HOSTED_DEFAULT_MAX_FILE_SIZE = formatSizeLimit(HOSTED_DEFAULT_MAX_FILE_SIZE_BYTES)
+const SERVER_FILE_PATH = fileURLToPath(import.meta.url)
+const SERVER_DIR_PATH = path.dirname(SERVER_FILE_PATH)
+const DEMO_VIDEO_URL = '/media/collaborativefolders_demo.mp4'
 
 function formatUsdFromCents(cents: number): string {
   const dollars = Math.max(0, cents) / 100
@@ -402,6 +407,12 @@ if (HOSTED_MODE) {
 }
 
 app.use(express.json())
+app.use(
+  '/media',
+  express.static(path.resolve(SERVER_DIR_PATH, '../media'), {
+    maxAge: '7d',
+  })
+)
 app.use('/api', requireV2HttpProtocol)
 
 app.use('/api/auth', authRouter)
@@ -685,23 +696,17 @@ app.get('/', (_req, res) => {
         margin-top: 10px;
         border: 1px solid #ddd2ba;
         border-radius: 16px;
-        background:
-          radial-gradient(circle at 20% 24%, rgba(204, 134, 0, 0.14) 0, rgba(204, 134, 0, 0) 38%),
-          linear-gradient(135deg, #f7f0df 0%, #efe5cb 100%);
-        min-height: 220px;
+        background: #121212;
         aspect-ratio: 16 / 9;
-        display: grid;
-        place-items: center;
-        text-align: center;
+        overflow: hidden;
         box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.65);
       }
-      .demo-frame p {
-        margin: 0;
-        color: #5b503f;
-        font-size: clamp(15px, 2vw, 18px);
-        line-height: 1.5;
-        max-width: 36ch;
-        padding: 0 18px;
+      .demo-video {
+        display: block;
+        width: 100%;
+        height: 100%;
+        object-fit: cover;
+        background: #121212;
       }
       .tile {
         border: 1px solid #e0d7c0;
@@ -835,7 +840,9 @@ app.get('/', (_req, res) => {
             </p>
           </details>
           <div class="demo-frame">
-            <p>Reserved space for a short product walkthrough video. Drop in a YouTube, Loom, or local embed when ready.</p>
+            <video class="demo-video" controls preload="metadata" playsinline src="${DEMO_VIDEO_URL}">
+              <a href="${DEMO_VIDEO_URL}">Watch the product walkthrough video</a>.
+            </video>
           </div>
         </section>
 
