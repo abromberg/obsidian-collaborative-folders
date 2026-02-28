@@ -22,7 +22,7 @@ _This is a community plugin maintained by [Andy Bromberg](https://andybromberg.c
 
 The valiant Obsidian plugin reviewing team is facing an onslaught of submissions. It may be weeks or months until they get to this one and add it to the real directory. Until then, you can install it with a helper plugin called [BRAT](https://tfthacker.com/BRAT).
 
-1. In Obsidian, open `Settings` -> `Community plugins` and install `BRAT`. (You'll have to turn on `Community plugins` first if you haven't already)
+1. [Install BRAT](https://obsidian.md/plugins?id=brat). Alternatively, in Obsidian, open `Settings` -> `Community plugins` and install `BRAT`. (You'll have to turn on `Community plugins` first if you haven't already)
 2. Toggle BRAT "on" in the community plugins list.
 3. Open BRAT settings and choose `Add beta plugin`.
 4. Enter this repository URL: `https://github.com/abromberg/obsidian-collaborative-folders` and hit `Add`

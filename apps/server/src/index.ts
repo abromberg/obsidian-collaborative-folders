@@ -49,6 +49,7 @@ const ALWAYS_ALLOWED_ORIGINS = new Set([
 ])
 const PROTOCOL_GATE_ENABLED = true
 const PLUGIN_INSTALL_URL = 'https://obsidian.md/plugins?id=collaborative-folders'
+const BRAT_PLUGIN_URL = 'https://obsidian.md/plugins?id=brat'
 const GITHUB_SOURCE_URL = 'https://github.com/abromberg/obsidian-collaborative-folders'
 const FAVICON_DATA_URL =
   'data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270%200%20100%20100%27%3E%3Ctext y=%27.9em%27 font-size=%2790%27%3E%F0%9F%93%99%3C/text%3E%3C/svg%3E'
@@ -623,7 +624,8 @@ app.get('/', (_req, res) => {
         gap: 12px;
         flex-wrap: wrap;
       }
-      a.button {
+      .button {
+        appearance: none;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -635,21 +637,27 @@ app.get('/', (_req, res) => {
         font-size: 20px;
         font-weight: 700;
         line-height: 1;
+        font-family: inherit;
+        cursor: pointer;
         transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
       }
-      a.button:hover {
+      .button:hover {
         transform: translateY(-1px);
         filter: brightness(1.02);
       }
-      a.button:active {
+      .button:active {
         transform: translateY(0);
       }
-      a.button.primary {
+      .button:focus-visible {
+        outline: 2px solid rgba(117, 81, 22, 0.38);
+        outline-offset: 2px;
+      }
+      .button.primary {
         background: var(--accent-0);
         color: #fff;
         box-shadow: 0 12px 28px rgba(158, 100, 0, 0.25);
       }
-      a.button.secondary {
+      .button.secondary {
         background: var(--accent-soft);
         color: var(--text-strong);
         border-color: #ddd3ba;
@@ -774,6 +782,73 @@ app.get('/', (_req, res) => {
         color: #7b705d;
         font-size: 13px;
       }
+      .install-modal {
+        width: min(640px, calc(100vw - 32px));
+        border: 1px solid #d6ccb4;
+        border-radius: 18px;
+        padding: 0;
+        background: #fbf8ef;
+        color: var(--text-strong);
+        box-shadow:
+          0 30px 90px rgba(35, 26, 8, 0.3),
+          0 2px 10px rgba(35, 26, 8, 0.12);
+      }
+      .install-modal::backdrop {
+        background: rgba(53, 46, 34, 0.45);
+        backdrop-filter: blur(2px);
+      }
+      .install-modal-inner {
+        margin: 0;
+        padding: 24px;
+      }
+      .install-modal-title {
+        margin: 0;
+        font-size: clamp(26px, 4vw, 32px);
+        line-height: 1.05;
+        letter-spacing: -0.015em;
+      }
+      .install-modal-lead {
+        margin: 10px 0 0;
+        color: #5f5748;
+        line-height: 1.55;
+      }
+      .install-steps {
+        margin: 18px 0 0;
+        padding-left: 22px;
+        color: #4f4738;
+        line-height: 1.55;
+      }
+      .install-steps li + li {
+        margin-top: 9px;
+      }
+      .install-steps code,
+      .install-note code {
+        border: 1px solid #d9cfb8;
+        border-radius: 8px;
+        background: #f4eddb;
+        padding: 1px 6px;
+        font-size: 13px;
+        font-family: "JetBrains Mono", "SFMono-Regular", "Menlo", "Monaco", "Cascadia Mono", "Consolas", "Liberation Mono", "Courier New", monospace;
+      }
+      .install-note {
+        margin: 14px 0 0;
+        padding: 12px 14px;
+        border: 1px solid #ddd2ba;
+        border-radius: 12px;
+        background: #f5efdf;
+        color: #5a513f;
+        font-size: 14px;
+        line-height: 1.55;
+      }
+      .install-modal-actions {
+        margin-top: 18px;
+        display: flex;
+        justify-content: flex-end;
+      }
+      .install-modal-actions .button {
+        font-size: 16px;
+        padding: 10px 16px;
+      }
       @media (max-width: 920px) {
         .card {
           border-radius: 16px;
@@ -785,15 +860,21 @@ app.get('/', (_req, res) => {
         .agent-note {
           display: none;
         }
-        a.button {
+        .button {
           font-size: 17px;
           padding: 13px 16px;
         }
       }
       @media (max-width: 520px) {
-        .actions a.button {
+        .actions .button {
           width: 100%;
           text-align: center;
+        }
+        .install-modal-inner {
+          padding: 18px;
+        }
+        .install-modal-actions .button {
+          width: 100%;
         }
       }
     </style>
@@ -815,7 +896,7 @@ app.get('/', (_req, res) => {
         </div>
 
         <div class="actions">
-          <a class="button primary" href="${PLUGIN_INSTALL_URL}" target="_blank" rel="noopener noreferrer">Install plugin</a>
+          <button class="button primary" type="button" id="install-plugin">Install plugin</button>
           <a class="button secondary" href="${GITHUB_SOURCE_URL}" target="_blank" rel="noopener noreferrer">
             <svg class="button-icon" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M8 0C3.58 0 0 3.58 0 8a8.01 8.01 0 0 0 5.47 7.59c.4.07.55-.17.55-.38 0-.19-.01-.82-.01-1.49C4 14.09 3.48 12.81 3.32 12.32c-.09-.23-.48-.94-.82-1.13-.28-.15-.68-.52-.01-.53.63-.01 1.08.58 1.23.82.72 1.21 1.87.87 2.33.66.07-.52.28-.87.5-1.07-1.78-.2-3.64-.89-3.64-3.96 0-.88.31-1.6.82-2.17-.08-.2-.36-1.02.08-2.12 0 0 .67-.22 2.2.82a7.52 7.52 0 0 1 4 0c1.53-1.04 2.2-.82 2.2-.82.44 1.1.16 1.92.08 2.12.51.57.82 1.29.82 2.17 0 3.08-1.87 3.76-3.65 3.96.29.25.54.73.54 1.48 0 1.07-.01 1.93-.01 2.19 0 .21.15.46.55.38A8.01 8.01 0 0 0 16 8c0-4.42-3.58-8-8-8z"></path>
@@ -823,6 +904,31 @@ app.get('/', (_req, res) => {
             <span>View source</span>
           </a>
         </div>
+        <dialog class="install-modal" id="install-modal" aria-labelledby="install-modal-title">
+          <form method="dialog" class="install-modal-inner">
+            <h2 class="install-modal-title" id="install-modal-title">Install With BRAT</h2>
+            <p class="install-modal-lead">
+              The valiant Obsidian plugin reviewing team is facing an onslaught of submissions. It may be weeks or months until they get to this one and add it to the real directory. Until then, you can install it with a helper plugin called BRAT.
+            </p>
+            <ol class="install-steps">
+              <li>
+                Install BRAT
+                by going to <a class="accent-link" href="${BRAT_PLUGIN_URL}" target="_blank" rel="noopener noreferrer">this link</a> or opening <code>Settings -> Community plugins</code> and searching for it.
+                (Enable Community plugins first if needed.)
+              </li>
+              <li>Toggle BRAT on in your Community plugins list.</li>
+              <li>Open BRAT settings and click <code>Add beta plugin</code>.</li>
+              <li>Paste <code>${GITHUB_SOURCE_URL}</code> and click <code>Add</code>.</li>
+              <li>
+                Open <code>Collaborative Folders</code> settings, set your display name, then either keep
+                <code>https://collaborativefolders.com</code> or set your own <code>Server URL</code>.
+              </li>
+            </ol>
+            <div class="install-modal-actions">
+              <button class="button secondary" type="submit" value="close">Close</button>
+            </div>
+          </form>
+        </dialog>
 
         <section class="demo" aria-label="Video demo">
           <details class="agent-note demo-agent-note">
@@ -890,17 +996,31 @@ app.get('/', (_req, res) => {
     <script>
       (() => {
         const agentNote = document.querySelector('.agent-note')
-        if (!(agentNote instanceof HTMLDetailsElement)) return
+        if (agentNote instanceof HTMLDetailsElement) {
+          document.addEventListener('pointerdown', (event) => {
+            if (!agentNote.open) return
+            const target = event.target
+            if (target instanceof Node && agentNote.contains(target)) return
+            agentNote.removeAttribute('open')
+          })
+        }
 
-        document.addEventListener('pointerdown', (event) => {
-          if (!agentNote.open) return
-          const target = event.target
-          if (target instanceof Node && agentNote.contains(target)) return
-          agentNote.removeAttribute('open')
-        })
+        const installButton = document.getElementById('install-plugin')
+        const installModal = document.getElementById('install-modal')
+        if (installButton instanceof HTMLButtonElement && installModal instanceof HTMLDialogElement) {
+          installButton.addEventListener('click', () => {
+            if (!installModal.open) installModal.showModal()
+          })
+
+          installModal.addEventListener('click', (event) => {
+            if (event.target === installModal && installModal.open) {
+              installModal.close()
+            }
+          })
+        }
 
         document.addEventListener('keydown', (event) => {
-          if (event.key === 'Escape') {
+          if (event.key === 'Escape' && agentNote instanceof HTMLDetailsElement) {
             agentNote.removeAttribute('open')
           }
         })
@@ -1075,6 +1195,7 @@ app.get('/pricing', (_req, res) => {
         flex-wrap: wrap;
       }
       .button {
+        appearance: none;
         display: inline-flex;
         align-items: center;
         justify-content: center;
@@ -1085,11 +1206,17 @@ app.get('/pricing', (_req, res) => {
         font-size: 14px;
         font-weight: 700;
         line-height: 1;
+        font-family: inherit;
+        cursor: pointer;
         transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
       }
       .button:hover {
         transform: translateY(-1px);
         filter: brightness(1.02);
+      }
+      .button:focus-visible {
+        outline: 2px solid rgba(117, 81, 22, 0.38);
+        outline-offset: 2px;
       }
       .button.primary {
         background: var(--accent-0);
@@ -1118,6 +1245,83 @@ app.get('/pricing', (_req, res) => {
         text-decoration-thickness: 2px;
         text-underline-offset: 2px;
       }
+      .install-modal {
+        width: min(640px, calc(100vw - 32px));
+        border: 1px solid #d6ccb4;
+        border-radius: 18px;
+        padding: 0;
+        background: var(--surface);
+        color: var(--text-strong);
+        box-shadow:
+          0 30px 90px rgba(35, 26, 8, 0.3),
+          0 2px 10px rgba(35, 26, 8, 0.12);
+      }
+      .install-modal::backdrop {
+        background: rgba(53, 46, 34, 0.45);
+        backdrop-filter: blur(2px);
+      }
+      .install-modal-inner {
+        margin: 0;
+        padding: 24px;
+      }
+      .install-modal-title {
+        margin: 0;
+        font-size: clamp(26px, 4vw, 32px);
+        line-height: 1.05;
+        letter-spacing: -0.015em;
+      }
+      .install-modal-lead {
+        margin: 10px 0 0;
+        color: #5f5748;
+        line-height: 1.55;
+      }
+      .install-steps {
+        margin: 18px 0 0;
+        padding-left: 22px;
+        color: #4f4738;
+        line-height: 1.55;
+      }
+      .install-steps li + li {
+        margin-top: 9px;
+      }
+      .install-steps code,
+      .install-note code {
+        border: 1px solid #d9cfb8;
+        border-radius: 8px;
+        background: #f4eddb;
+        padding: 1px 6px;
+        font-size: 13px;
+        font-family: "JetBrains Mono", "SFMono-Regular", "Menlo", "Monaco", "Cascadia Mono", "Consolas", "Liberation Mono", "Courier New", monospace;
+      }
+      .install-note {
+        margin: 14px 0 0;
+        padding: 12px 14px;
+        border: 1px solid #ddd2ba;
+        border-radius: 12px;
+        background: #f5efdf;
+        color: #5a513f;
+        font-size: 14px;
+        line-height: 1.55;
+      }
+      .accent-link {
+        color: #6b5530;
+        font-weight: 700;
+        text-decoration-color: #b6883a;
+        text-decoration-thickness: 2px;
+        text-underline-offset: 2px;
+      }
+      .accent-link:hover {
+        color: #4f3f24;
+      }
+      .install-modal-actions {
+        margin-top: 18px;
+        display: flex;
+        justify-content: flex-end;
+      }
+      .install-modal-actions .button {
+        font-size: 16px;
+        padding: 10px 16px;
+      }
       @media (max-width: 800px) {
         .card {
           border-radius: 16px;
@@ -1128,6 +1332,12 @@ app.get('/pricing', (_req, res) => {
         .actions .button {
           width: 100%;
           text-align: center;
+        }
+        .install-modal-inner {
+          padding: 18px;
+        }
+        .install-modal-actions .button {
+          width: 100%;
         }
       }
     </style>
@@ -1145,13 +1355,13 @@ app.get('/pricing', (_req, res) => {
 
         <h1>Pricing</h1>
         <p class="summary">
-          Self-host Collaborative Folders for free, or use our managed hosting at ${HOSTED_DEFAULT_SEAT_PRICE} per subscribed user each month.
+          Self-host Collaborative Folders for free, or use our managed hosting at ${HOSTED_DEFAULT_SEAT_PRICE} per month.
         </p>
 
         <section class="plans" aria-label="Pricing plans">
           <article class="plan">
             <h2>Self-host</h2>
-            <p class="price">$0<span>No per-user subscription fee</span></p>
+            <p class="price">$0<span>No subscription fee</span></p>
             <p class="plan-note">Run the MIT-licensed stack on your own infrastructure.</p>
             <ul class="features">
               <li>No subscription required, you control everything.</li>
@@ -1165,18 +1375,43 @@ app.get('/pricing', (_req, res) => {
 
           <article class="plan plan-hosted">
             <h2>Managed for you</h2>
-            <p class="price">${HOSTED_DEFAULT_SEAT_PRICE}<span>Per subscribed user / month</span></p>
-            <p class="plan-note">End-to-end encrypted — we can't read your notes.</p>
+            <p class="price">${HOSTED_DEFAULT_SEAT_PRICE}<span>Per month</span></p>
+            <p class="plan-note">End-to-end encrypted (we can't read your notes).</p>
             <ul class="features">
               <li>You don't have to lift a finger.</li>
-              <li>${HOSTED_DEFAULT_STORAGE_CAP} total owner storage cap across owned shared folders.</li>
+              <li>${HOSTED_DEFAULT_STORAGE_CAP} storage cap across owned shared folders.</li>
               <li>${HOSTED_DEFAULT_MAX_FILE_SIZE} maximum upload size per file.</li>
             </ul>
             <div class="actions">
-              <a class="button primary" href="${PLUGIN_INSTALL_URL}" target="_blank" rel="noopener noreferrer">Install plugin</a>
+              <button class="button primary" type="button" id="pricing-install-plugin">Install plugin</button>
             </div>
           </article>
         </section>
+        <dialog class="install-modal" id="pricing-install-modal" aria-labelledby="pricing-install-modal-title">
+          <form method="dialog" class="install-modal-inner">
+            <h2 class="install-modal-title" id="pricing-install-modal-title">Install With BRAT</h2>
+            <p class="install-modal-lead">
+              The valiant Obsidian plugin reviewing team is facing an onslaught of submissions. It may be weeks or months until they get to this one and add it to the real directory. Until then, you can install it with a helper plugin called BRAT.
+            </p>
+            <ol class="install-steps">
+              <li>
+                Install BRAT
+                by going to <a class="accent-link" href="${BRAT_PLUGIN_URL}" target="_blank" rel="noopener noreferrer">this link</a> or opening <code>Settings -> Community plugins</code> and searching for it.
+                (Enable Community plugins first if needed.)
+              </li>
+              <li>Toggle BRAT on in your Community plugins list.</li>
+              <li>Open BRAT settings and click <code>Add beta plugin</code>.</li>
+              <li>Paste <code>${GITHUB_SOURCE_URL}</code> and click <code>Add</code>.</li>
+              <li>
+                Open <code>Collaborative Folders</code> settings, set your display name, then either keep
+                <code>https://collaborativefolders.com</code> or set your own <code>Server URL</code>.
+              </li>
+            </ol>
+            <div class="install-modal-actions">
+              <button class="button secondary" type="submit" value="close">Close</button>
+            </div>
+          </form>
+        </dialog>
 
         <p class="meta">
           Limits shown above reflect current hosted defaults as of ${LEGAL_LAST_UPDATED}. Hosted terms may change prospectively with notice. See
@@ -1186,6 +1421,23 @@ app.get('/pricing', (_req, res) => {
         </p>
       </section>
     </main>
+    <script>
+      (() => {
+        const installButton = document.getElementById('pricing-install-plugin')
+        const installModal = document.getElementById('pricing-install-modal')
+        if (installButton instanceof HTMLButtonElement && installModal instanceof HTMLDialogElement) {
+          installButton.addEventListener('click', () => {
+            if (!installModal.open) installModal.showModal()
+          })
+
+          installModal.addEventListener('click', (event) => {
+            if (event.target === installModal && installModal.open) {
+              installModal.close()
+            }
+          })
+        }
+      })()
+    </script>
   </body>
 </html>`)
 })

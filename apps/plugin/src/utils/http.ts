@@ -99,8 +99,13 @@ export function registerObsidianRequestUrl(requestUrl: ObsidianRequestUrlFn): vo
 }
 
 function resolveObsidianRequestUrl(): ObsidianRequestUrlFn | null {
-  const fn = globalThis.__obsidianRequestUrl
-  return typeof fn === 'function' ? fn : null
+  const injected = globalThis.__obsidianRequestUrl
+  if (typeof injected === 'function') return injected
+
+  const globalCandidate = (globalThis as { requestUrl?: unknown }).requestUrl
+  return typeof globalCandidate === 'function'
+    ? (globalCandidate as ObsidianRequestUrlFn)
+    : null
 }
 
 export async function httpRequest(url: string, init: HttpRequestInit = {}): Promise<HttpResponseLike> {
