@@ -1,6 +1,6 @@
 # Obsidian Collaborative Folders
 
-![Obsidian Collaborative Folders](apps/server/media/collaborativefolders_header.png)
+[![Obsidian Collaborative Folders](apps/server/media/collaborativefolders_header.png)](https://collaborativefolders.com)
 
 Real-time, multiplayer shared folders and notes for [Obsidian](https://obsidian.md/). Deploy it yourself or use our hosted service — and either way, notes are encrypted end-to-end. Everything you love about Google Docs, but in your lovely local Obsidian instance. Fully MIT-licensed. 
 
@@ -12,9 +12,11 @@ As long as Obsidian is open, updates you make will be synced to other people sha
 
 ## Demo
 
-[![Watch the demo](apps/server/media/collaborativefolders_header.png)](apps/server/media/collaborativefolders_demo.mp4)
+<video src="apps/server/media/collaborativefolders_demo.mp4" controls preload="metadata" playsinline width="960">
+  Your browser does not support the video tag.
+</video>
 
-([Link to demo video](https://collaborativefolders.com/media/collaborativefolders_demo.mp4))
+[Open demo video directly](apps/server/media/collaborativefolders_demo.mp4)
 
 _This is a community plugin maintained by [Andy Bromberg](https://andybromberg.com) at Experimental LLC. Neither Andy nor Experimental LLC are affiliated with Obsidian._
 
