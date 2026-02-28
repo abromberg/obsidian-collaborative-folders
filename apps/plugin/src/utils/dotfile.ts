@@ -1,4 +1,4 @@
-import { Vault, TFile, TFolder } from 'obsidian'
+import { Vault, TFolder } from 'obsidian'
 import { SHARED_CONFIG_FILENAME, type SharedFolderConfig } from '@obsidian-teams/shared'
 
 /** A shared folder found in the vault */
@@ -28,11 +28,11 @@ export async function readSharedConfigAsync(
   folderPath: string
 ): Promise<SharedFolderConfig | null> {
   const configPath = `${folderPath}/${SHARED_CONFIG_FILENAME}`
-  const file = vault.getAbstractFileByPath(configPath)
-  if (!(file instanceof TFile)) return null
+  const exists = await vault.adapter.exists(configPath)
+  if (!exists) return null
 
   try {
-    const content = await vault.read(file)
+    const content = await vault.adapter.read(configPath)
     return JSON.parse(content) as SharedFolderConfig
   } catch {
     return null
@@ -47,12 +47,7 @@ export async function writeSharedConfig(
 ): Promise<void> {
   const configPath = `${folderPath}/${SHARED_CONFIG_FILENAME}`
   const content = JSON.stringify(config, null, 2)
-  const existing = vault.getAbstractFileByPath(configPath)
-  if (existing instanceof TFile) {
-    await vault.modify(existing, content)
-  } else {
-    await vault.create(configPath, content)
-  }
+  await vault.adapter.write(configPath, content)
 }
 
 /** Remove .shared.json from a folder */
@@ -61,9 +56,9 @@ export async function removeSharedConfig(
   folderPath: string
 ): Promise<void> {
   const configPath = `${folderPath}/${SHARED_CONFIG_FILENAME}`
-  const existing = vault.getAbstractFileByPath(configPath)
-  if (existing instanceof TFile) {
-    await vault.delete(existing)
+  const exists = await vault.adapter.exists(configPath)
+  if (exists) {
+    await vault.adapter.remove(configPath)
   }
 }
 
