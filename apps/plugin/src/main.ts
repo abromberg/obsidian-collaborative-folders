@@ -77,6 +77,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
   private lastNetworkNoticeAt = 0
   private membershipDetachInFlight = new Set<string>()
   private protocolBillingInFlight = false
+  private inviteJoinInFlight = new Map<string, Promise<boolean>>()
 
   async onload() {
     await this.loadSettings()
@@ -370,33 +371,47 @@ export default class ObsidianTeamsPlugin extends Plugin {
       return false
     }
 
-    try {
-      const result = await this.joinInviteTokenWithRetry(token)
-      if (this.settings.pendingInviteToken) {
-        this.settings.pendingInviteToken = ''
-        await this.saveSettings()
-      }
-      if (!options.suppressSuccessNotice) {
-        new Notice(`Joined shared folder: ${result.folderName}`)
-      }
-      return true
-    } catch (error) {
-      const raw = rawErrorMessage(error, 'Unknown error')
-      const message = friendlyError(raw)
+    const existingJoin = this.inviteJoinInFlight.get(token)
+    if (existingJoin) {
+      return existingJoin
+    }
 
-      if (isConfigError(raw)) {
-        this.settings.pendingInviteToken = token
-        await this.saveSettings()
-        if (options.openSettingsOnConfigError ?? true) {
-          this.openPluginSettings()
+    const joinAttempt = (async (): Promise<boolean> => {
+      try {
+        const result = await this.joinInviteTokenWithRetry(token)
+        if (this.settings.pendingInviteToken) {
+          this.settings.pendingInviteToken = ''
+          await this.saveSettings()
         }
-        new Notice('Configure your account to join the shared folder. Your invite is saved.')
+        if (!options.suppressSuccessNotice) {
+          new Notice(`Joined shared folder: ${result.folderName}`)
+        }
+        return true
+      } catch (error) {
+        const raw = rawErrorMessage(error, 'Unknown error')
+        const message = friendlyError(raw)
+
+        if (isConfigError(raw)) {
+          this.settings.pendingInviteToken = token
+          await this.saveSettings()
+          if (options.openSettingsOnConfigError ?? true) {
+            this.openPluginSettings()
+          }
+          new Notice('Configure your account to join the shared folder. Your invite is saved.')
+          return false
+        }
+
+        new Notice(`Failed to join folder: ${message}`)
+        console.error('[teams] Join error:', error)
         return false
       }
+    })()
 
-      new Notice(`Failed to join folder: ${message}`)
-      console.error('[teams] Join error:', error)
-      return false
+    this.inviteJoinInFlight.set(token, joinAttempt)
+    try {
+      return await joinAttempt
+    } finally {
+      this.inviteJoinInFlight.delete(token)
     }
   }
 

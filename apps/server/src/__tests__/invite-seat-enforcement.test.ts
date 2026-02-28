@@ -358,3 +358,52 @@ test('existing editor cannot redeem invite and does not consume it', async () =>
   assert.equal(editorMember?.role, 'editor')
   assert.equal(editorMember?.display_name, 'Existing Editor')
 })
+
+test('consumed invite still returns already_member for an existing editor', async () => {
+  resetDb()
+
+  const tokenHash = seedInviteScenario({
+    folderId: 'folder-5',
+    ownerAccountId: 'acct-owner-5',
+    ownerStatus: 'active',
+    inviteeAccountId: 'acct-invitee-5',
+    inviteeStatus: 'active',
+    tokenValue: 'invite-token-5',
+  })
+
+  db.prepare(
+    `
+    INSERT INTO members (folder_id, client_id, account_id, display_name, role, token_version)
+    VALUES (?, ?, ?, ?, 'editor', 0)
+  `
+  ).run('folder-5', 'editor-client', 'acct-invitee-5', 'Existing Editor')
+
+  db.prepare('UPDATE invites SET use_count = max_uses WHERE token_hash = ?').run(tokenHash)
+
+  const session = issueHostedSession(db, 'acct-invitee-5')
+  const headers: Record<string, string> = {}
+
+  const req = {
+    ip: '127.0.0.1',
+    headers,
+    header(name: string) {
+      const key = name.toLowerCase()
+      return (headers[key] || null) as string | null
+    },
+    body: {
+      inviteToken: 'invite-token-5',
+      clientId: 'editor-client',
+      displayName: 'Editor (Changed)',
+      hostedSessionToken: session.sessionToken,
+    },
+  }
+
+  const res = createMockResponse()
+  await invokeChain(inviteRedeemHandlers, req, res)
+
+  assert.equal(res.statusCode, 409)
+  assert.deepEqual(res.body, {
+    error: 'Client is already a member of this folder',
+    code: 'already_member',
+  })
+})

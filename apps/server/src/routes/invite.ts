@@ -408,7 +408,6 @@ inviteRouter.get('/redeem', (req: Request, res: Response) => {
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>Open in Obsidian</title>
     <link rel="icon" href="${FAVICON_DATA_URL}">
-    <meta http-equiv="refresh" content="0;url=${escapedDeepLink}">
     <style>
       :root {
         --bg: #f1eee2;
@@ -740,11 +739,19 @@ inviteRouter.get('/redeem', (req: Request, res: Response) => {
       const installModal = document.getElementById('install-modal')
       const statusTextEl = document.getElementById('status-text')
 
+      let autoLaunchTriggered = false
+
       const openDeepLink = () => {
         window.location.href = deepLink
       }
 
-      window.setTimeout(openDeepLink, 40)
+      const autoLaunchDeepLink = () => {
+        if (autoLaunchTriggered) return
+        autoLaunchTriggered = true
+        openDeepLink()
+      }
+
+      window.setTimeout(autoLaunchDeepLink, 40)
 
       if (installButton instanceof HTMLButtonElement && installModal instanceof HTMLDialogElement) {
         installButton.addEventListener('click', () => {
@@ -1094,11 +1101,6 @@ inviteRouter.post('/redeem', inviteRedeemRateLimiter, (req: Request, res: Respon
       return
     }
 
-    if (invite.use_count >= invite.max_uses) {
-      res.status(410).json({ error: 'Invite already consumed' })
-      return
-    }
-
     const existingMember = db
       .prepare('SELECT role FROM members WHERE folder_id = ? AND client_id = ?')
       .get(invite.folder_id, clientId) as Pick<MemberTokenRow, 'role'> | undefined
@@ -1107,6 +1109,11 @@ inviteRouter.post('/redeem', inviteRedeemRateLimiter, (req: Request, res: Respon
         error: existingMemberRedeemError(existingMember.role),
         code: 'already_member',
       })
+      return
+    }
+
+    if (invite.use_count >= invite.max_uses) {
+      res.status(410).json({ error: 'Invite already consumed' })
       return
     }
 
@@ -1150,10 +1157,6 @@ inviteRouter.post('/redeem', inviteRedeemRateLimiter, (req: Request, res: Respon
       if (inviteForMutation.expires_at && new Date(inviteForMutation.expires_at).getTime() <= Date.now()) {
         throw new InviteRedeemError(410, 'Invite has expired')
       }
-      if (inviteForMutation.use_count >= inviteForMutation.max_uses) {
-        throw new InviteRedeemError(410, 'Invite already consumed')
-      }
-
       const existingMemberForMutation = db
         .prepare('SELECT role FROM members WHERE folder_id = ? AND client_id = ?')
         .get(inviteForMutation.folder_id, clientId) as Pick<MemberTokenRow, 'role'> | undefined
@@ -1163,6 +1166,10 @@ inviteRouter.post('/redeem', inviteRedeemRateLimiter, (req: Request, res: Respon
           existingMemberRedeemError(existingMemberForMutation.role),
           'already_member'
         )
+      }
+
+      if (inviteForMutation.use_count >= inviteForMutation.max_uses) {
+        throw new InviteRedeemError(410, 'Invite already consumed')
       }
 
       if (hostedMode && folder.owner_account_id) {
