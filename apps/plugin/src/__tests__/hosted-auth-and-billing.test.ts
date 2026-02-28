@@ -4,6 +4,7 @@ import {
   createHostedSession,
   createHostedCheckoutSession,
   createHostedPortalSession,
+  getHostedAuthMe,
   createInvite,
   redeemInvite,
 } from '../utils/auth.js'
@@ -111,7 +112,7 @@ test('createInvite and redeemInvite include hosted session context when provided
   }
 })
 
-test('hosted billing helpers call checkout and portal endpoints', async () => {
+test('hosted billing helpers call checkout, portal, and account snapshot endpoints', async () => {
   const originalFetch = globalThis.fetch
   const calls: Array<{ url: string; init?: RequestInit }> = []
 
@@ -124,21 +125,67 @@ test('hosted billing helpers call checkout and portal endpoints', async () => {
       )
     }
 
+    if (String(url).includes('/portal-session')) {
+      return new Response(
+        JSON.stringify({ portalUrl: 'https://billing.stripe.test/portal' }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } }
+      )
+    }
+
     return new Response(
-      JSON.stringify({ portalUrl: 'https://billing.stripe.test/portal' }),
+      JSON.stringify({
+        account: {
+          id: 'acct-1',
+          email: 'owner@example.com',
+          displayName: 'Owner',
+          status: 'active',
+          expiresAt: '2026-03-01T00:00:00.000Z',
+        },
+        billing: {
+          subscriptionStatus: 'active',
+          priceCents: 900,
+          storageCapBytes: 3221225472,
+          maxFileSizeBytes: 26214400,
+          currentPeriodEnd: null,
+          cancelAtPeriodEnd: false,
+        },
+        usage: {
+          ownedFolderCount: 0,
+          ownedStorageBytes: 0,
+        },
+      }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     )
   }) as typeof fetch
 
   try {
-    const checkout = await createHostedCheckoutSession('https://teams.example.com', 'session-token-1')
-    const portal = await createHostedPortalSession('https://teams.example.com', 'session-token-1')
+    const checkout = await createHostedCheckoutSession('https://teams.example.com', 'session-token-1', {
+      successUrl: 'https://teams.example.com/api/hosted/billing/return?status=success',
+      cancelUrl: 'https://teams.example.com/api/hosted/billing/return?status=cancel',
+    })
+    const portal = await createHostedPortalSession('https://teams.example.com', 'session-token-1', {
+      returnUrl: 'https://teams.example.com/api/hosted/billing/return?status=return',
+    })
+    const me = await getHostedAuthMe('https://teams.example.com', 'session-token-1')
 
     assert.equal(checkout.checkoutSessionId, 'cs_1')
     assert.equal(portal.portalUrl, 'https://billing.stripe.test/portal')
+    assert.equal(me.billing.subscriptionStatus, 'active')
 
     const checkoutBody = JSON.parse(String(calls[0].init?.body)) as Record<string, unknown>
-    assert.deepEqual(checkoutBody, {})
+    assert.deepEqual(checkoutBody, {
+      successUrl: 'https://teams.example.com/api/hosted/billing/return?status=success',
+      cancelUrl: 'https://teams.example.com/api/hosted/billing/return?status=cancel',
+    })
+
+    const portalBody = JSON.parse(String(calls[1].init?.body)) as Record<string, unknown>
+    assert.deepEqual(portalBody, {
+      returnUrl: 'https://teams.example.com/api/hosted/billing/return?status=return',
+    })
+
+    const meHeaders = calls[2].init?.headers as Record<string, string>
+    assert.equal(meHeaders[PROTOCOL_HEADER], PROTOCOL_V2)
+    assert.equal(meHeaders[HOSTED_SESSION_HEADER], 'session-token-1')
   } finally {
     globalThis.fetch = originalFetch
   }

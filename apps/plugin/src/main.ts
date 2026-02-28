@@ -16,6 +16,7 @@ import {
   createHostedCheckoutSession,
   createHostedPortalSession,
   createHostedSession,
+  getHostedAuthMe,
   decodeAccessToken,
   getAccessToken,
   getFolderRole,
@@ -72,6 +73,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
   private lastNetworkNoticeAt = 0
   private membershipDetachInFlight = new Set<string>()
   private protocolJoinInFlight = false
+  private protocolBillingInFlight = false
 
   async onload() {
     await this.loadSettings()
@@ -143,6 +145,9 @@ export default class ObsidianTeamsPlugin extends Plugin {
 
     this.registerObsidianProtocolHandler('teams-join', (params) => {
       void this.handleInviteDeepLink(params)
+    })
+    this.registerObsidianProtocolHandler('teams-billing', (params) => {
+      void this.handleBillingDeepLink(params)
     })
 
     // Register editor extensions (mutated dynamically per-file)
@@ -331,6 +336,128 @@ export default class ObsidianTeamsPlugin extends Plugin {
       new JoinFolderModal(this.app, this, { inviteToken }).open()
     } finally {
       this.protocolJoinInFlight = false
+    }
+  }
+
+  private normalizeBillingStatus(value: string): 'success' | 'cancel' | 'return' {
+    if (value === 'success' || value === 'cancel' || value === 'return') {
+      return value
+    }
+    return 'return'
+  }
+
+  private resolveBillingStatusFromDeepLink(params: ObsidianProtocolData): 'success' | 'cancel' | 'return' {
+    const fromStatus = typeof params.status === 'string' ? params.status : ''
+    const fromResult = typeof params.result === 'string' ? params.result : ''
+    const fromBilling = typeof params.billing === 'string' ? params.billing : ''
+    const raw = (fromStatus || fromResult || fromBilling).trim().toLowerCase()
+    const decoded = this.decodeProtocolParam(raw).trim().toLowerCase()
+    return this.normalizeBillingStatus(decoded)
+  }
+
+  private isHostedSubscriptionActive(status: string): boolean {
+    const normalized = status.trim().toLowerCase()
+    return normalized === 'active' || normalized === 'trialing'
+  }
+
+  private buildHostedBillingReturnUrl(status: 'success' | 'cancel' | 'return'): string {
+    const baseUrl = this.settings.serverUrl.trim().replace(/\/+$/, '')
+    return `${baseUrl}/api/hosted/billing/return?status=${encodeURIComponent(status)}`
+  }
+
+  private waitForMs(durationMs: number): Promise<void> {
+    return new Promise((resolve) => {
+      window.setTimeout(resolve, durationMs)
+    })
+  }
+
+  private async refreshHostedBillingSnapshot(
+    hostedSessionToken: string,
+    options: { waitForActive?: boolean } = {}
+  ) {
+    const waitForActive = options.waitForActive ?? false
+    const maxAttempts = waitForActive ? 8 : 1
+    let latestSnapshot: Awaited<ReturnType<typeof getHostedAuthMe>> | null = null
+    let latestError: unknown = null
+
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      try {
+        const snapshot = await getHostedAuthMe(this.settings.serverUrl, hostedSessionToken)
+        latestSnapshot = snapshot
+        if (!waitForActive || this.isHostedSubscriptionActive(snapshot.billing.subscriptionStatus)) {
+          return snapshot
+        }
+      } catch (error) {
+        latestError = error
+      }
+
+      if (attempt < maxAttempts - 1) {
+        await this.waitForMs(1_250)
+      }
+    }
+
+    if (latestSnapshot) return latestSnapshot
+    if (latestError instanceof Error) throw latestError
+    throw new Error('Failed to refresh hosted billing state')
+  }
+
+  private async handleBillingDeepLink(params: ObsidianProtocolData): Promise<void> {
+    if (!this.isHostedMode()) return
+
+    const status = this.resolveBillingStatusFromDeepLink(params)
+
+    if (status === 'cancel') {
+      new Notice('Checkout canceled. No billing changes were applied.')
+      return
+    }
+
+    if (this.protocolBillingInFlight) {
+      new Notice('Billing update is already in progress')
+      return
+    }
+
+    this.protocolBillingInFlight = true
+    try {
+      const hostedSessionToken = await this.ensureHostedBillingSession()
+      if (!hostedSessionToken) {
+        new Notice('Hosted account session missing. Set your hosted email and retry billing.')
+        return
+      }
+
+      const snapshot = await this.refreshHostedBillingSnapshot(hostedSessionToken, {
+        waitForActive: status === 'success',
+      })
+      const subscriptionStatus = snapshot.billing.subscriptionStatus || 'inactive'
+
+      this.settings.hostedAccountEmail = snapshot.account.email
+      const displayName =
+        snapshot.account.displayName || this.settings.displayName || this.effectiveHostedDisplayName()
+      this.settings.hostedAccountDisplayName = displayName
+      this.settings.hostedSessionExpiresAt = snapshot.account.expiresAt
+      if (!this.settings.displayName) {
+        this.settings.displayName = displayName
+      }
+      await this.saveSettings()
+
+      if (status === 'success') {
+        if (this.isHostedSubscriptionActive(subscriptionStatus)) {
+          new Notice('Subscription active. Hosted collaboration is ready.')
+        } else {
+          new Notice(`Checkout completed. Billing status is '${subscriptionStatus}'. It may take a moment to sync.`)
+        }
+      } else if (this.isHostedSubscriptionActive(subscriptionStatus)) {
+        new Notice('Returned from billing portal. Subscription is active.')
+      } else {
+        new Notice(`Returned from billing portal. Current billing status: ${subscriptionStatus}.`)
+      }
+
+      void this.refreshSharedFolders()
+    } catch (error) {
+      const message = this.describeHostedRequestError(error, 'Failed to refresh hosted billing status')
+      new Notice(message)
+      console.error('[teams] Billing deep-link handling failed:', error)
+    } finally {
+      this.protocolBillingInFlight = false
     }
   }
 
@@ -1255,7 +1382,11 @@ export default class ObsidianTeamsPlugin extends Plugin {
     try {
       const checkout = await createHostedCheckoutSession(
         this.settings.serverUrl,
-        hostedSessionToken
+        hostedSessionToken,
+        {
+          successUrl: this.buildHostedBillingReturnUrl('success'),
+          cancelUrl: this.buildHostedBillingReturnUrl('cancel'),
+        }
       )
       this.openExternalUrl(checkout.checkoutUrl)
     } catch (error) {
@@ -1277,7 +1408,10 @@ export default class ObsidianTeamsPlugin extends Plugin {
     try {
       const portal = await createHostedPortalSession(
         this.settings.serverUrl,
-        hostedSessionToken
+        hostedSessionToken,
+        {
+          returnUrl: this.buildHostedBillingReturnUrl('return'),
+        }
       )
       this.openExternalUrl(portal.portalUrl)
     } catch (error) {

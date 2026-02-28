@@ -11,6 +11,7 @@ import type {
   RemoveMemberResponse,
   RotateFolderKeyRequest,
   HostedSessionResponse,
+  HostedAuthMeResponse,
   HostedCheckoutSessionResponse,
   HostedPortalSessionResponse,
 } from '@obsidian-teams/shared'
@@ -434,8 +435,18 @@ export async function createHostedSession(
 
 export async function createHostedCheckoutSession(
   serverUrl: string,
-  hostedSessionToken: string
+  hostedSessionToken: string,
+  options: {
+    successUrl?: string
+    cancelUrl?: string
+  } = {}
 ): Promise<HostedCheckoutSessionResponse> {
+  const payload: { successUrl?: string; cancelUrl?: string } = {}
+  const successUrl = options.successUrl?.trim()
+  const cancelUrl = options.cancelUrl?.trim()
+  if (successUrl) payload.successUrl = successUrl
+  if (cancelUrl) payload.cancelUrl = cancelUrl
+
   const response = await httpRequest(`${serverUrl}/api/hosted/billing/checkout-session`, {
     method: 'POST',
     headers: {
@@ -443,7 +454,7 @@ export async function createHostedCheckoutSession(
       [PROTOCOL_HEADER]: PROTOCOL_V2,
       [HOSTED_SESSION_HEADER]: hostedSessionToken,
     },
-    body: JSON.stringify({}),
+    body: JSON.stringify(payload),
   })
 
   if (!response.ok) {
@@ -456,8 +467,15 @@ export async function createHostedCheckoutSession(
 
 export async function createHostedPortalSession(
   serverUrl: string,
-  hostedSessionToken: string
+  hostedSessionToken: string,
+  options: {
+    returnUrl?: string
+  } = {}
 ): Promise<HostedPortalSessionResponse> {
+  const payload: { returnUrl?: string } = {}
+  const returnUrl = options.returnUrl?.trim()
+  if (returnUrl) payload.returnUrl = returnUrl
+
   const response = await httpRequest(`${serverUrl}/api/hosted/billing/portal-session`, {
     method: 'POST',
     headers: {
@@ -465,7 +483,7 @@ export async function createHostedPortalSession(
       [PROTOCOL_HEADER]: PROTOCOL_V2,
       [HOSTED_SESSION_HEADER]: hostedSessionToken,
     },
-    body: JSON.stringify({}),
+    body: JSON.stringify(payload),
   })
 
   if (!response.ok) {
@@ -474,4 +492,23 @@ export async function createHostedPortalSession(
   }
 
   return (await response.json()) as HostedPortalSessionResponse
+}
+
+export async function getHostedAuthMe(
+  serverUrl: string,
+  hostedSessionToken: string
+): Promise<HostedAuthMeResponse> {
+  const response = await httpRequest(`${serverUrl}/api/hosted/auth/me`, {
+    headers: {
+      [PROTOCOL_HEADER]: PROTOCOL_V2,
+      [HOSTED_SESSION_HEADER]: hostedSessionToken,
+    },
+  })
+
+  if (!response.ok) {
+    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
+    throw new Error(error.error || `HTTP ${response.status}`)
+  }
+
+  return (await response.json()) as HostedAuthMeResponse
 }

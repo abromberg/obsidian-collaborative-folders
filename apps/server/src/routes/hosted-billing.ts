@@ -78,6 +78,201 @@ interface AccountEditorMemberRow {
   client_id: string
 }
 
+type BillingReturnStatus = 'success' | 'cancel' | 'return'
+
+const BILLING_RETURN_STATUSES = new Set<BillingReturnStatus>(['success', 'cancel', 'return'])
+
+function escapeHtml(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function normalizeHostedBaseUrl(value: string): string {
+  return value.replace(/\/+$/, '')
+}
+
+function resolveBillingReturnStatus(input: unknown): BillingReturnStatus {
+  const normalized = typeof input === 'string' ? input.trim().toLowerCase() : ''
+  if (BILLING_RETURN_STATUSES.has(normalized as BillingReturnStatus)) {
+    return normalized as BillingReturnStatus
+  }
+  return 'return'
+}
+
+function buildBillingReturnUrl(status: BillingReturnStatus): string {
+  const baseUrl = normalizeHostedBaseUrl(hostedBaseUrl())
+  return `${baseUrl}/api/hosted/billing/return?status=${encodeURIComponent(status)}`
+}
+
+function billingReturnContent(status: BillingReturnStatus): { eyebrow: string; heading: string; body: string } {
+  if (status === 'success') {
+    return {
+      eyebrow: 'Checkout complete',
+      heading: 'Opening Obsidian...',
+      body: 'Your payment succeeded. We are taking you back to Obsidian to finish setup.',
+    }
+  }
+
+  if (status === 'cancel') {
+    return {
+      eyebrow: 'Checkout canceled',
+      heading: 'Returning to Obsidian...',
+      body: 'No changes were made. Open Obsidian to continue whenever you are ready.',
+    }
+  }
+
+  return {
+    eyebrow: 'Billing updated',
+    heading: 'Returning to Obsidian...',
+    body: 'Your billing session is complete. Open Obsidian to keep collaborating.',
+  }
+}
+
+function renderBillingReturnPage(status: BillingReturnStatus): string {
+  const deepLink = `obsidian://teams-billing?status=${encodeURIComponent(status)}`
+  const escapedDeepLink = escapeHtml(deepLink)
+  const deepLinkLiteral = JSON.stringify(deepLink)
+  const content = billingReturnContent(status)
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>${escapeHtml(content.eyebrow)}</title>
+    <meta http-equiv="refresh" content="0;url=${escapedDeepLink}">
+    <style>
+      :root {
+        --bg: #f1eee2;
+        --surface: #fbf8ef;
+        --text-strong: #352e22;
+        --text-soft: #615847;
+        --line: #d5ccb5;
+        --accent-0: #cc8600;
+        --accent-soft: #e7ddc5;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        font-family: "Avenir Next", "Nunito Sans", "Segoe UI", sans-serif;
+        margin: 0;
+        min-height: 100vh;
+        display: grid;
+        place-items: center;
+        padding: 26px;
+        background: var(--bg);
+        color: var(--text-strong);
+      }
+      .wrap {
+        width: min(720px, 100%);
+      }
+      .card {
+        padding: 28px 30px;
+        border-radius: 22px;
+        border: 1px solid var(--line);
+        background: var(--surface);
+        box-shadow:
+          0 24px 70px rgba(39, 30, 11, 0.08),
+          0 2px 8px rgba(39, 30, 11, 0.06);
+      }
+      .eyebrow {
+        margin: 0 0 12px;
+        font-size: 12px;
+        font-weight: 700;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        color: #786f5e;
+      }
+      h1 {
+        margin: 0;
+        font-size: clamp(34px, 5vw, 54px);
+        line-height: 0.94;
+        letter-spacing: -0.02em;
+      }
+      p {
+        margin: 16px 0 0;
+        font-size: 18px;
+        line-height: 1.5;
+        color: var(--text-soft);
+      }
+      .actions {
+        margin-top: 22px;
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+      a.button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        border: 1px solid transparent;
+        border-radius: 14px;
+        padding: 13px 20px;
+        font-size: 18px;
+        line-height: 1;
+        font-weight: 700;
+        text-decoration: none;
+        transition: transform 120ms ease, box-shadow 120ms ease, filter 120ms ease;
+      }
+      a.button:hover {
+        transform: translateY(-1px);
+        filter: brightness(1.02);
+      }
+      a.button.primary {
+        background: var(--accent-0);
+        color: #fff;
+        box-shadow: 0 12px 28px rgba(158, 100, 0, 0.25);
+      }
+      a.button.secondary {
+        background: var(--accent-soft);
+        color: var(--text-strong);
+        border-color: #ddd3ba;
+      }
+      @media (max-width: 640px) {
+        .card {
+          padding: 22px 20px;
+          border-radius: 16px;
+        }
+        h1 {
+          font-size: clamp(30px, 10vw, 44px);
+        }
+        p {
+          font-size: 16px;
+        }
+        a.button {
+          width: 100%;
+          text-align: center;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <div class="card">
+        <p class="eyebrow">${escapeHtml(content.eyebrow)}</p>
+        <h1>${escapeHtml(content.heading)}</h1>
+        <p>${escapeHtml(content.body)}</p>
+        <div class="actions">
+          <a class="button primary" href="${escapedDeepLink}" id="open-obsidian">Open Obsidian</a>
+          <a class="button secondary" href="/pricing">Back to pricing</a>
+        </div>
+      </div>
+    </div>
+    <script>
+      const deepLink = ${deepLinkLiteral}
+      window.setTimeout(() => {
+        window.location.href = deepLink
+      }, 40)
+    </script>
+  </body>
+</html>`
+}
+
 function toIsoFromEpoch(seconds: number | undefined): string | null {
   if (!seconds || !Number.isFinite(seconds)) return null
   return new Date(Math.trunc(seconds) * 1000).toISOString()
@@ -597,6 +792,17 @@ function processStripeEvent(db: ReturnType<typeof getDb>, event: StripeEvent): {
   return { accountId }
 }
 
+/** GET /api/hosted/billing/return — browser bridge that deep-links users back into Obsidian. */
+hostedBillingRouter.get('/return', (req: Request, res: Response) => {
+  const status = resolveBillingReturnStatus(req.query.status)
+  res
+    .status(200)
+    .type('html')
+    .setHeader('Cache-Control', 'no-store')
+    .setHeader('Referrer-Policy', 'no-referrer')
+    .send(renderBillingReturnPage(status))
+})
+
 /** POST /api/hosted/billing/checkout-session — create Stripe checkout session for account. */
 hostedBillingRouter.post(
   '/checkout-session',
@@ -613,9 +819,8 @@ hostedBillingRouter.post(
     const db = getDb()
     const access = resolveBillingAccount(db, actor.accountId)
 
-    const baseUrl = hostedBaseUrl()
-    const successUrl = req.body.successUrl?.trim() || `${baseUrl}/?billing=success`
-    const cancelUrl = req.body.cancelUrl?.trim() || `${baseUrl}/?billing=cancel`
+    const successUrl = req.body.successUrl?.trim() || buildBillingReturnUrl('success')
+    const cancelUrl = req.body.cancelUrl?.trim() || buildBillingReturnUrl('cancel')
 
     const body = formBody({
       mode: 'subscription',
@@ -681,7 +886,7 @@ hostedBillingRouter.post(
       return
     }
 
-    const returnUrl = req.body.returnUrl?.trim() || `${hostedBaseUrl()}/?billing=return`
+    const returnUrl = req.body.returnUrl?.trim() || buildBillingReturnUrl('return')
     const body = formBody({
       customer: access.stripe_customer_id,
       return_url: returnUrl,
