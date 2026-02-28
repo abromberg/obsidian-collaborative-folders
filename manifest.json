@@ -4,6 +4,6 @@
   "version": "0.1.4",
   "minAppVersion": "0.16.0",
   "author": "Andy Bromberg",
-  "description": "Real-time collaborative editing of shared folders across vaults",
+  "description": "Real-time multiplayer editing of shared folders and notes.",
   "isDesktopOnly": false
 }
