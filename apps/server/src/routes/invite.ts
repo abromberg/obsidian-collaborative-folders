@@ -63,6 +63,11 @@ interface MemberTokenRow {
   display_name: string
 }
 
+function existingMemberRedeemError(role: MemberTokenRow['role']): string {
+  if (role === 'owner') return 'Folder owner cannot redeem invites for this folder'
+  return 'Client is already a member of this folder'
+}
+
 class InviteRedeemError extends Error {
   readonly status: number
   readonly code?: string
@@ -765,6 +770,17 @@ inviteRouter.post('/redeem', inviteRedeemRateLimiter, (req: Request, res: Respon
       return
     }
 
+    const existingMember = db
+      .prepare('SELECT role FROM members WHERE folder_id = ? AND client_id = ?')
+      .get(invite.folder_id, clientId) as Pick<MemberTokenRow, 'role'> | undefined
+    if (existingMember) {
+      res.status(409).json({
+        error: existingMemberRedeemError(existingMember.role),
+        code: 'already_member',
+      })
+      return
+    }
+
     const redeemQuota = consumeWindowedQuota({
       name: 'invite-redeem-hourly',
       key: `${invite.folder_id}:${clientId}`,
@@ -807,6 +823,17 @@ inviteRouter.post('/redeem', inviteRedeemRateLimiter, (req: Request, res: Respon
       }
       if (inviteForMutation.use_count >= inviteForMutation.max_uses) {
         throw new InviteRedeemError(410, 'Invite already consumed')
+      }
+
+      const existingMemberForMutation = db
+        .prepare('SELECT role FROM members WHERE folder_id = ? AND client_id = ?')
+        .get(inviteForMutation.folder_id, clientId) as Pick<MemberTokenRow, 'role'> | undefined
+      if (existingMemberForMutation) {
+        throw new InviteRedeemError(
+          409,
+          existingMemberRedeemError(existingMemberForMutation.role),
+          'already_member'
+        )
       }
 
       if (hostedMode && folder.owner_account_id) {
@@ -852,13 +879,10 @@ inviteRouter.post('/redeem', inviteRedeemRateLimiter, (req: Request, res: Respon
 
       useCountAfterRedeem = inviteForMutation.use_count + 1
 
-      db.prepare(`
+      const insertMemberResult = db.prepare(`
         INSERT INTO members (folder_id, client_id, account_id, display_name, role, token_version)
         VALUES (?, ?, ?, ?, ?, 0)
-        ON CONFLICT(folder_id, client_id) DO UPDATE SET
-          display_name = excluded.display_name,
-          role = excluded.role,
-          account_id = COALESCE(excluded.account_id, members.account_id)
+        ON CONFLICT(folder_id, client_id) DO NOTHING
       `).run(
         inviteForMutation.folder_id,
         clientId,
@@ -866,6 +890,10 @@ inviteRouter.post('/redeem', inviteRedeemRateLimiter, (req: Request, res: Respon
         displayName,
         inviteForMutation.role
       )
+
+      if (insertMemberResult.changes !== 1) {
+        throw new InviteRedeemError(409, 'Client is already a member of this folder', 'already_member')
+      }
 
       db.exec('COMMIT')
     } catch (error) {

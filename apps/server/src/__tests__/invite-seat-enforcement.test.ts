@@ -249,3 +249,112 @@ test('hosted invite redemption fails when owner subscription is not active', asy
     code: 'subscription_inactive',
   })
 })
+
+test('existing owner cannot redeem invite and does not consume it', async () => {
+  resetDb()
+
+  const tokenHash = seedInviteScenario({
+    folderId: 'folder-3',
+    ownerAccountId: 'acct-owner-3',
+    ownerStatus: 'active',
+    inviteeAccountId: 'acct-invitee-3',
+    inviteeStatus: 'active',
+    tokenValue: 'invite-token-3',
+  })
+
+  const session = issueHostedSession(db, 'acct-owner-3')
+  const headers: Record<string, string> = {}
+
+  const req = {
+    ip: '127.0.0.1',
+    headers,
+    header(name: string) {
+      const key = name.toLowerCase()
+      return (headers[key] || null) as string | null
+    },
+    body: {
+      inviteToken: 'invite-token-3',
+      clientId: 'owner-client',
+      displayName: 'Owner (Changed)',
+      hostedSessionToken: session.sessionToken,
+    },
+  }
+
+  const res = createMockResponse()
+  await invokeChain(inviteRedeemHandlers, req, res)
+
+  assert.equal(res.statusCode, 409)
+  assert.deepEqual(res.body, {
+    error: 'Folder owner cannot redeem invites for this folder',
+    code: 'already_member',
+  })
+
+  const inviteUsage = db.prepare('SELECT use_count FROM invites WHERE token_hash = ?').get(tokenHash) as
+    | { use_count: number }
+    | undefined
+  assert.equal(inviteUsage?.use_count, 0)
+
+  const ownerMember = db
+    .prepare('SELECT role, display_name FROM members WHERE folder_id = ? AND client_id = ?')
+    .get('folder-3', 'owner-client') as { role: string; display_name: string } | undefined
+  assert.equal(ownerMember?.role, 'owner')
+  assert.equal(ownerMember?.display_name, 'Owner')
+})
+
+test('existing editor cannot redeem invite and does not consume it', async () => {
+  resetDb()
+
+  const tokenHash = seedInviteScenario({
+    folderId: 'folder-4',
+    ownerAccountId: 'acct-owner-4',
+    ownerStatus: 'active',
+    inviteeAccountId: 'acct-invitee-4',
+    inviteeStatus: 'active',
+    tokenValue: 'invite-token-4',
+  })
+
+  db.prepare(
+    `
+    INSERT INTO members (folder_id, client_id, account_id, display_name, role, token_version)
+    VALUES (?, ?, ?, ?, 'editor', 0)
+  `
+  ).run('folder-4', 'editor-client', 'acct-invitee-4', 'Existing Editor')
+
+  const session = issueHostedSession(db, 'acct-invitee-4')
+  const headers: Record<string, string> = {}
+
+  const req = {
+    ip: '127.0.0.1',
+    headers,
+    header(name: string) {
+      const key = name.toLowerCase()
+      return (headers[key] || null) as string | null
+    },
+    body: {
+      inviteToken: 'invite-token-4',
+      clientId: 'editor-client',
+      displayName: 'Editor (Changed)',
+      hostedSessionToken: session.sessionToken,
+    },
+  }
+
+  const res = createMockResponse()
+  await invokeChain(inviteRedeemHandlers, req, res)
+
+  assert.equal(res.statusCode, 409)
+  assert.deepEqual(res.body, {
+    error: 'Client is already a member of this folder',
+    code: 'already_member',
+  })
+
+  const inviteUsage = db.prepare('SELECT use_count FROM invites WHERE token_hash = ?').get(tokenHash) as
+    | { use_count: number }
+    | undefined
+  assert.equal(inviteUsage?.use_count, 0)
+
+  const editorMember = db
+    .prepare('SELECT role, display_name FROM members WHERE folder_id = ? AND client_id = ?')
+    .get('folder-4', 'editor-client') as { role: string; display_name: string } | undefined
+  assert.equal(editorMember?.role, 'editor')
+  assert.equal(editorMember?.display_name, 'Existing Editor')
+})
