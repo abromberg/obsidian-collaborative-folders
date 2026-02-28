@@ -3,7 +3,7 @@ name: Release Obsidian Plugin
 on:
   push:
     tags:
-      - "v*"
+      - "[0-9]*.[0-9]*.[0-9]*"
 
 permissions:
   contents: write
@@ -32,7 +32,7 @@ jobs:
 
       - name: Verify tag version matches plugin manifest
         run: |
-          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          TAG_VERSION="${GITHUB_REF_NAME}"
           MANIFEST_VERSION="$(node -e "const fs=require('node:fs');const manifest=JSON.parse(fs.readFileSync('apps/plugin/manifest.json','utf8'));process.stdout.write(manifest.version);")"
           if [ "$TAG_VERSION" != "$MANIFEST_VERSION" ]; then
             echo "Tag version ($TAG_VERSION) does not match apps/plugin/manifest.json version ($MANIFEST_VERSION)."
@@ -54,6 +54,7 @@ jobs:
       - name: Publish GitHub release
         uses: softprops/action-gh-release@v2
         with:
+          name: ${{ github.ref_name }}
           files: |
             release/obsidian-plugin/main.js
             release/obsidian-plugin/manifest.json
