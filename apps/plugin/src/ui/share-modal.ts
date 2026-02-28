@@ -32,8 +32,6 @@ export class ShareFolderModal extends Modal {
   private latestInviteToken: string | null = null
   private latestInviteLabel: string | null = null
   private latestInviteUrl: string | null = null
-  private inviteExpiryHours = DEFAULT_INVITE_EXPIRY_HOURS
-  private inviteMaxUses = DEFAULT_INVITE_MAX_USES
   private cachedMembers: FolderMemberRecord[] = []
   private cachedInvites: FolderInviteRecord[] = []
   private hasLoadedRemoteData = false
@@ -120,8 +118,8 @@ export class ShareFolderModal extends Modal {
           {
             hostedSessionToken: this.isHostedMode() ? this.plugin.settings.hostedSessionToken || undefined : undefined,
             inviteeLabel: inviteLabel || undefined,
-            expiresInHours: this.inviteExpiryHours,
-            maxUses: this.inviteMaxUses,
+            expiresInHours: DEFAULT_INVITE_EXPIRY_HOURS,
+            maxUses: DEFAULT_INVITE_MAX_USES,
           }
         )
 
@@ -303,34 +301,6 @@ export class ShareFolderModal extends Modal {
         })
       })
 
-    new Setting(contentEl)
-      .setName('Invite expires in')
-      .addDropdown((dropdown) => {
-        dropdown
-          .addOption('1', '1 hour')
-          .addOption('24', '1 day')
-          .addOption('168', '1 week (default)')
-          .addOption('720', '30 days')
-          .setValue(String(this.inviteExpiryHours))
-          .onChange((value) => {
-            this.inviteExpiryHours = Number.parseInt(value, 10) || DEFAULT_INVITE_EXPIRY_HOURS
-          })
-      })
-
-    new Setting(contentEl)
-      .setName('Max uses')
-      .addDropdown((dropdown) => {
-        dropdown
-          .addOption('1', '1 (single-use, default)')
-          .addOption('5', '5')
-          .addOption('10', '10')
-          .addOption('25', '25')
-          .setValue(String(this.inviteMaxUses))
-          .onChange((value) => {
-            this.inviteMaxUses = Number.parseInt(value, 10) || DEFAULT_INVITE_MAX_USES
-          })
-      })
-
     new Setting(contentEl).addButton((btn) => {
       const baseText = canBootstrap ? 'Start sharing + generate invite' : 'Generate invite'
       btn
@@ -341,29 +311,6 @@ export class ShareFolderModal extends Modal {
           void this.handleCreateInvite()
         })
     })
-
-    if (this.isHostedMode()) {
-      new Setting(contentEl)
-        .setName('Hosted billing')
-        .setDesc('Open Stripe-hosted billing pages. Account link is created automatically if needed.')
-        .addButton((btn) => {
-          btn
-            .setButtonText('Subscribe ($9/month)')
-            .setCta()
-            .setDisabled(this.actionInFlight)
-            .onClick(async () => {
-              await this.plugin.openHostedCheckout()
-            })
-        })
-        .addButton((btn) => {
-          btn
-            .setButtonText('Manage billing')
-            .setDisabled(this.actionInFlight)
-            .onClick(async () => {
-              await this.plugin.openHostedBillingPortal()
-            })
-        })
-    }
 
     if (!canCreateInvite) {
       contentEl.createEl('p', {
@@ -500,9 +447,7 @@ export class ShareFolderModal extends Modal {
       } else {
         for (const invite of pending) {
           const label = invite.inviteeLabel || this.shortId(invite.tokenHash)
-          const desc =
-            `${invite.status} · ${invite.useCount}/${invite.maxUses} uses · ` +
-            `expires ${this.formatDate(invite.expiresAt)}`
+          const desc = `${invite.status} · created ${this.formatDate(invite.createdAt)}`
           const row = new Setting(contentEl)
             .setName(label)
             .setDesc(desc)

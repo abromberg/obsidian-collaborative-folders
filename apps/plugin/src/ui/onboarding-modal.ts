@@ -131,10 +131,12 @@ export class OnboardingModal extends Modal {
     if (this.deploymentMode === 'hosted-service') {
       this.plugin.settings.serverUrl = DEFAULT_SERVER_URL
       this.plugin.settings.hostedAccountEmail = this.hostedEmail.trim().toLowerCase()
+      this.plugin.settings.hostedSubscriptionStatus = ''
     } else {
       this.plugin.settings.serverUrl = this.selfHostedUrl.trim() || SELF_DEPLOY_DEFAULT_SERVER_URL
       this.plugin.settings.hostedSessionToken = ''
       this.plugin.settings.hostedSessionExpiresAt = ''
+      this.plugin.settings.hostedSubscriptionStatus = ''
     }
 
     const pendingInviteToken = this.plugin.settings.pendingInviteToken.trim()

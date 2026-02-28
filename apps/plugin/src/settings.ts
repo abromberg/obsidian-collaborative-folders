@@ -19,6 +19,7 @@ export interface ObsidianTeamsSettings {
   hostedAccountDisplayName: string
   hostedSessionToken: string
   hostedSessionExpiresAt: string
+  hostedSubscriptionStatus: string
   /** Map of folderId → access JWT */
   folderTokens: Record<string, string>
   /** Map of folderId → rotating refresh token */
@@ -37,6 +38,7 @@ export const DEFAULT_SETTINGS: ObsidianTeamsSettings = {
   hostedAccountDisplayName: '',
   hostedSessionToken: '',
   hostedSessionExpiresAt: '',
+  hostedSubscriptionStatus: '',
   folderTokens: {},
   folderRefreshTokens: {},
 }
@@ -47,6 +49,7 @@ function normalizeUrl(value: string): string {
 
 export class ObsidianTeamsSettingTab extends PluginSettingTab {
   plugin: ObsidianTeamsPlugin
+  private refreshingHostedSubscriptionStatus = false
 
   constructor(app: App, plugin: ObsidianTeamsPlugin) {
     super(app, plugin)
@@ -78,6 +81,11 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
     }
 
     await this.saveAndRefresh()
+  }
+
+  private isHostedSubscriptionActive(status: string): boolean {
+    const normalized = status.trim().toLowerCase()
+    return normalized === 'active' || normalized === 'trialing'
   }
 
   private renderPendingInviteBanner(containerEl: HTMLElement): void {
@@ -126,18 +134,6 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
         text.inputEl.setAttr('readonly', 'true')
         text.inputEl.style.opacity = '0.7'
       })
-
-    new Setting(containerEl)
-      .setName('Debug logging')
-      .setDesc('Enable verbose console logs for troubleshooting sync behavior.')
-      .addToggle((toggle) => {
-        toggle
-          .setValue(this.plugin.settings.debugLogging)
-          .onChange(async (value) => {
-            this.plugin.settings.debugLogging = value
-            await this.plugin.saveSettings()
-          })
-      })
   }
 
   private renderHostedSettings(containerEl: HTMLElement): void {
@@ -171,29 +167,61 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
       )
 
     const hasHostedSession = Boolean(this.plugin.settings.hostedSessionToken)
+    const hasResolvedSubscriptionStatus = this.plugin.settings.hostedSubscriptionStatus.trim().length > 0
+    const subscriptionStatus = hasResolvedSubscriptionStatus
+      ? this.plugin.settings.hostedSubscriptionStatus
+      : 'unknown'
+    const subscriptionActive = hasResolvedSubscriptionStatus && this.isHostedSubscriptionActive(subscriptionStatus)
     const statusMessage = hasHostedSession
-      ? 'Hosted account session is active.'
+      ? subscriptionActive
+        ? 'Hosted account session is active. Subscription is active.'
+        : hasResolvedSubscriptionStatus
+          ? `Hosted account session is active. Subscription status: ${subscriptionStatus}.`
+          : 'Hosted account session is active. Checking subscription status...'
       : 'No hosted session yet. Click Subscribe to begin; account session is created automatically.'
     containerEl.createEl('p', {
       cls: 'setting-item-description',
       text: statusMessage,
     })
 
+    if (
+      hasHostedSession &&
+      !this.plugin.settings.hostedSubscriptionStatus &&
+      !this.refreshingHostedSubscriptionStatus
+    ) {
+      this.refreshingHostedSubscriptionStatus = true
+      void this.plugin.refreshHostedSubscriptionStatus().finally(() => {
+        this.refreshingHostedSubscriptionStatus = false
+        this.display()
+      })
+    }
+
     new Setting(containerEl)
       .setName('Hosted billing')
-      .setDesc('Subscribe or manage billing. If needed, account linking is performed automatically first.')
+      .setDesc(
+        hasHostedSession && !hasResolvedSubscriptionStatus
+          ? 'Checking subscription status...'
+          : subscriptionActive
+            ? 'Manage your billing subscription.'
+            : 'Start your hosted subscription.'
+      )
       .addButton((btn) => {
+        if (hasHostedSession && !hasResolvedSubscriptionStatus) {
+          btn.setButtonText('Checking...').setDisabled(true)
+          return
+        }
+        if (subscriptionActive) {
+          btn.setButtonText('Manage billing').onClick(async () => {
+            await this.plugin.openHostedBillingPortal()
+          })
+          return
+        }
         btn
           .setButtonText('Subscribe ($9/month)')
           .setCta()
           .onClick(async () => {
             await this.plugin.openHostedCheckout()
           })
-      })
-      .addButton((btn) => {
-        btn.setButtonText('Manage billing').onClick(async () => {
-          await this.plugin.openHostedBillingPortal()
-        })
       })
   }
 

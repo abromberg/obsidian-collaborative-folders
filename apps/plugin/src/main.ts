@@ -420,6 +420,28 @@ export default class ObsidianTeamsPlugin extends Plugin {
     throw new Error('Failed to refresh hosted billing state')
   }
 
+  async refreshHostedSubscriptionStatus(): Promise<string | null> {
+    if (!this.isHostedMode()) return null
+    if (!this.settings.hostedSessionToken) return null
+
+    try {
+      const snapshot = await this.refreshHostedBillingSnapshot(this.settings.hostedSessionToken)
+      this.settings.hostedSubscriptionStatus = snapshot.billing.subscriptionStatus || 'inactive'
+      this.settings.hostedAccountEmail = snapshot.account.email
+      this.settings.hostedSessionExpiresAt = snapshot.account.expiresAt
+      if (snapshot.account.displayName) {
+        this.settings.hostedAccountDisplayName = snapshot.account.displayName
+        if (!this.settings.displayName) {
+          this.settings.displayName = snapshot.account.displayName
+        }
+      }
+      await this.saveSettings()
+      return this.settings.hostedSubscriptionStatus
+    } catch {
+      return this.settings.hostedSubscriptionStatus || null
+    }
+  }
+
   private async handleBillingDeepLink(params: ObsidianProtocolData): Promise<void> {
     if (!this.isHostedMode()) return
 
@@ -449,6 +471,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
       const subscriptionStatus = snapshot.billing.subscriptionStatus || 'inactive'
 
       this.settings.hostedAccountEmail = snapshot.account.email
+      this.settings.hostedSubscriptionStatus = subscriptionStatus
       const displayName =
         snapshot.account.displayName || this.settings.displayName || this.effectiveHostedDisplayName()
       this.settings.hostedAccountDisplayName = displayName
@@ -1440,7 +1463,9 @@ export default class ObsidianTeamsPlugin extends Plugin {
       this.settings.hostedAccountDisplayName = linkedDisplayName
       this.settings.hostedSessionToken = session.sessionToken
       this.settings.hostedSessionExpiresAt = session.expiresAt
+      this.settings.hostedSubscriptionStatus = ''
       await this.saveSettings()
+      await this.refreshHostedSubscriptionStatus()
       if (!options.silentSuccess) {
         new Notice(`Hosted account linked: ${session.account.email}`)
       }
@@ -1456,6 +1481,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
   async clearHostedAccountLink(): Promise<void> {
     this.settings.hostedSessionToken = ''
     this.settings.hostedSessionExpiresAt = ''
+    this.settings.hostedSubscriptionStatus = ''
     await this.saveSettings()
     new Notice('Hosted account link cleared')
   }

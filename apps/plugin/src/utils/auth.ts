@@ -467,6 +467,15 @@ export async function silentHostedRelink(
     sessionExpiresSoon(plugin.settings.hostedSessionExpiresAt)
 
   if (!shouldRelink) {
+    if (!plugin.settings.hostedSubscriptionStatus && plugin.settings.hostedSessionToken) {
+      try {
+        const snapshot = await getHostedAuthMe(plugin.settings.serverUrl, plugin.settings.hostedSessionToken)
+        plugin.settings.hostedSubscriptionStatus = snapshot.billing.subscriptionStatus || 'inactive'
+        await plugin.saveSettings()
+      } catch {
+        // Ignore snapshot refresh failures for silent path.
+      }
+    }
     return true
   }
 
@@ -479,11 +488,18 @@ export async function silentHostedRelink(
     plugin.settings.hostedAccountEmail = session.account.email
     plugin.settings.hostedSessionToken = session.sessionToken
     plugin.settings.hostedSessionExpiresAt = session.expiresAt
+    plugin.settings.hostedSubscriptionStatus = ''
     if (session.account.displayName) {
       plugin.settings.hostedAccountDisplayName = session.account.displayName
       if (!plugin.settings.displayName) {
         plugin.settings.displayName = session.account.displayName
       }
+    }
+    try {
+      const snapshot = await getHostedAuthMe(plugin.settings.serverUrl, session.sessionToken)
+      plugin.settings.hostedSubscriptionStatus = snapshot.billing.subscriptionStatus || 'inactive'
+    } catch {
+      // Best effort only; session refresh should still succeed even if snapshot lookup fails.
     }
     await plugin.saveSettings()
     return true
