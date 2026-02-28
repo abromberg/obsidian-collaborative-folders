@@ -14,7 +14,7 @@ As long as Obsidian is open, updates you make will be synced to other people sha
 
 https://github.com/user-attachments/assets/2fadb49b-5a9d-4d25-badc-0b9d493acac9
 
-[Open demo video directly](https://collaborativefolders.com/media/collaborativefolders_demo.mp4)
+[Open demo video directly](https://collaborativefolders.com/media/collab_demo.mp4)
 
 _This is a community plugin maintained by [Andy Bromberg](https://andybromberg.com) at Experimental LLC. Neither Andy nor Experimental LLC are affiliated with Obsidian._
 

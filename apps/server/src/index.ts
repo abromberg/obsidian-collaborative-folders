@@ -67,7 +67,7 @@ const HOSTED_DEFAULT_STORAGE_CAP = formatSizeLimit(HOSTED_DEFAULT_STORAGE_CAP_BY
 const HOSTED_DEFAULT_MAX_FILE_SIZE = formatSizeLimit(HOSTED_DEFAULT_MAX_FILE_SIZE_BYTES)
 const SERVER_FILE_PATH = fileURLToPath(import.meta.url)
 const SERVER_DIR_PATH = path.dirname(SERVER_FILE_PATH)
-const DEMO_VIDEO_URL = '/media/collaborativefolders_demo.mp4'
+const DEMO_VIDEO_URL = '/media/collab_demo.mp4'
 
 function formatUsdFromCents(cents: number): string {
   const dollars = Math.max(0, cents) / 100
