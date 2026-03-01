@@ -17,6 +17,7 @@ import {
 } from '@obsidian-teams/shared'
 import { authRouter } from './routes/auth.js'
 import { inviteRouter } from './routes/invite.js'
+import { fileLinksRouter } from './routes/file-links.js'
 import { foldersRouter } from './routes/folders.js'
 import { blobsRouter } from './routes/blobs.js'
 import { keysRouter } from './routes/keys.js'
@@ -130,8 +131,18 @@ function requireV2HttpProtocol(req: Request, res: Response, next: NextFunction):
   }
 
   const isPublicInviteRedeemPath = req.path === '/invite/redeem' || req.path === '/invite/redeem/'
+  const isPublicFileLinkOpenPath = req.path === '/file-links/open' || req.path === '/file-links/open/'
+  const isPublicFileLinkPreviewPath = req.path === '/file-links/preview' || req.path === '/file-links/preview/'
   const isHostedBillingReturnPath = req.path === '/hosted/billing/return' || req.path === '/hosted/billing/return/'
-  if ((req.method === 'GET' || req.method === 'HEAD') && (isPublicInviteRedeemPath || isHostedBillingReturnPath)) {
+  if (
+    (req.method === 'GET' || req.method === 'HEAD')
+    && (
+      isPublicInviteRedeemPath
+      || isPublicFileLinkOpenPath
+      || isPublicFileLinkPreviewPath
+      || isHostedBillingReturnPath
+    )
+  ) {
     next()
     return
   }
@@ -476,6 +487,7 @@ app.use('/api', requireV2HttpProtocol)
 
 app.use('/api/auth', authRouter)
 app.use('/api/invite', inviteRouter)
+app.use('/api', fileLinksRouter)
 app.use('/api/folders', foldersRouter)
 app.use('/api/folders', blobsRouter)
 app.use('/api/folders', keysRouter)

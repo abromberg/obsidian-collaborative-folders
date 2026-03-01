@@ -25,6 +25,9 @@ import {
   getOrRefreshToken,
   removeAccessToken,
   removeFolderMember,
+  createFileShareLink,
+  previewFileShareLink,
+  resolveFileShareLink,
 } from './utils/auth'
 import { ShareFolderModal } from './ui/share-modal'
 import { JoinFolderModal, joinSharedFolderByInvite } from './ui/join-modal'
@@ -35,6 +38,11 @@ import { keyHealthLabel, type KeyHealthState } from './ui/key-health-status'
 import { registerObsidianRequestUrl } from './utils/http'
 import { debugLog, setDebugLogging } from './utils/logger'
 import { friendlyError, isConfigError, isHostedSessionError, rawErrorMessage } from './utils/friendly-errors'
+import {
+  hasFileSharePermission,
+  relativePathWithinSharedFolder,
+  resolveFileShareTokenParam,
+} from './utils/file-share-links'
 
 interface FolderSession {
   fileTree: FileTreeSync
@@ -167,6 +175,9 @@ export default class ObsidianTeamsPlugin extends Plugin {
     this.registerObsidianProtocolHandler('teams-billing', (params) => {
       void this.handleBillingDeepLink(params)
     })
+    this.registerObsidianProtocolHandler('teams-open-file', (params) => {
+      void this.handleFileShareDeepLink(params)
+    })
 
     // Register editor extensions (mutated dynamically per-file)
     this.registerEditorExtension(this.editorExtensions)
@@ -192,47 +203,67 @@ export default class ObsidianTeamsPlugin extends Plugin {
     // Context menu: right-click folder → "Share folder" / "Manage shared folder"
     this.registerEvent(
       this.app.workspace.on('file-menu', (menu, file) => {
-        if (!(file instanceof TFolder)) return
-
-        const sharedFolder = this.getSharedFolderForPath(file.path)
-        if (sharedFolder && sharedFolder.path === file.path) {
-          const roleFromToken = getFolderRole(this, sharedFolder.config.folderId)
-          const isOwner =
-            roleFromToken === 'owner' ||
-            sharedFolder.config.members.some(
-              (m) => m.clientId === this.settings.clientId && m.role === 'owner'
-            )
-          if (isOwner) {
+        if (file instanceof TFolder) {
+          const sharedFolder = this.getSharedFolderForPath(file.path)
+          if (sharedFolder && sharedFolder.path === file.path) {
+            const roleFromToken = getFolderRole(this, sharedFolder.config.folderId)
+            const isOwner =
+              roleFromToken === 'owner' ||
+              sharedFolder.config.members.some(
+                (m) => m.clientId === this.settings.clientId && m.role === 'owner'
+              )
+            if (isOwner) {
+              menu.addItem((item) => {
+                item
+                  .setTitle('Manage shared folder...')
+                  .setIcon('settings')
+                  .onClick(() => {
+                    new ShareFolderModal(this.app, file, this).open()
+                  })
+              })
+            } else {
+              menu.addItem((item) => {
+                item
+                  .setTitle('Leave shared folder')
+                  .setIcon('log-out')
+                  .onClick(() => this.leaveSharedFolder(sharedFolder))
+              })
+            }
+          } else if (!sharedFolder) {
             menu.addItem((item) => {
               item
-                .setTitle('Manage shared folder...')
-                .setIcon('settings')
+                .setTitle('Share folder...')
+                .setIcon('share-2')
                 .onClick(() => {
+                  if (!this.settings.onboardingComplete) {
+                    new OnboardingModal(this.app, this).open()
+                    return
+                  }
                   new ShareFolderModal(this.app, file, this).open()
                 })
             })
-          } else {
-            menu.addItem((item) => {
-              item
-                .setTitle('Leave shared folder')
-                .setIcon('log-out')
-                .onClick(() => this.leaveSharedFolder(sharedFolder))
-            })
           }
-        } else if (!sharedFolder) {
-          menu.addItem((item) => {
-            item
-              .setTitle('Share folder...')
-              .setIcon('share-2')
-              .onClick(() => {
-                if (!this.settings.onboardingComplete) {
-                  new OnboardingModal(this.app, this).open()
-                  return
-                }
-                new ShareFolderModal(this.app, file, this).open()
-              })
-          })
+          return
         }
+
+        if (!(file instanceof TFile)) return
+
+        const sharedFolder = this.getSharedFolderForPath(file.path)
+        if (!sharedFolder) return
+        const roleFromToken = getFolderRole(this, sharedFolder.config.folderId)
+        const roleFromConfig =
+          sharedFolder.config.members.find((member) => member.clientId === this.settings.clientId)?.role || null
+        const effectiveRole = roleFromToken || roleFromConfig
+        if (!hasFileSharePermission(effectiveRole)) return
+
+        menu.addItem((item) => {
+          item
+            .setTitle('Create share link')
+            .setIcon('share-2')
+            .onClick(() => {
+              void this.createFileShareLinkForFile(file)
+            })
+        })
       })
     )
 
@@ -336,6 +367,119 @@ export default class ObsidianTeamsPlugin extends Plugin {
     if (!raw) return null
     const decoded = this.decodeProtocolParam(raw).trim()
     return decoded.length > 0 ? decoded : null
+  }
+
+  private resolveFileShareTokenFromDeepLink(params: ObsidianProtocolData): string | null {
+    return resolveFileShareTokenParam(params as unknown as Record<string, unknown>)
+  }
+
+  private async createFileShareLinkForFile(file: TFile): Promise<void> {
+    if (!this.settings.onboardingComplete) {
+      new OnboardingModal(this.app, this).open()
+      return
+    }
+
+    const sharedFolder = this.getSharedFolderForPath(file.path)
+    if (!sharedFolder) {
+      new Notice('This file is not inside a shared folder.')
+      return
+    }
+
+    const relativePath = relativePathWithinSharedFolder(sharedFolder.path, file.path)
+    if (!relativePath) {
+      new Notice('Could not resolve this file path inside the shared folder.')
+      return
+    }
+
+    const folderId = sharedFolder.config.folderId
+    const fileId = this.folderSessions.get(folderId)?.fileTree.getFile(relativePath)?.fileId || null
+
+    try {
+      const result = await createFileShareLink(this, folderId, {
+        fileId,
+        relativePath,
+        fileName: file.name,
+      })
+
+      try {
+        await navigator.clipboard.writeText(result.shareUrl)
+        new Notice(`Share link copied for ${file.name}`)
+      } catch {
+        new Notice(`Share link created: ${result.shareUrl}`)
+      }
+    } catch (error) {
+      const raw = rawErrorMessage(error, 'Failed to create file share link')
+      new Notice(friendlyError(raw))
+      console.error('[teams] File share link creation failed:', error)
+    }
+  }
+
+  private resolveOpenRelativePath(
+    folderId: string,
+    target: { fileId: string | null; relativePath: string }
+  ): string {
+    const folderSession = this.folderSessions.get(folderId)
+    if (target.fileId && folderSession) {
+      const mapped = folderSession.fileTree.getByFileId(target.fileId)
+      if (mapped) return mapped.relativePath
+    }
+    return target.relativePath
+  }
+
+  private async waitForSharedFileOnDisk(fullPath: string): Promise<TFile | null> {
+    const maxAttempts = 8
+    for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+      const abstract = this.app.vault.getAbstractFileByPath(fullPath)
+      if (abstract instanceof TFile) {
+        return abstract
+      }
+
+      if (attempt < maxAttempts - 1) {
+        await this.waitForMs(350)
+      }
+    }
+    return null
+  }
+
+  private async handleFileShareDeepLink(params: ObsidianProtocolData): Promise<void> {
+    const token = this.resolveFileShareTokenFromDeepLink(params)
+    if (!token) {
+      new Notice('File link is missing token')
+      return
+    }
+
+    try {
+      const preview = await previewFileShareLink(this.settings.serverUrl, token)
+      const sharedFolder = this.sharedFolders.find((sf) => sf.config.folderId === preview.folderId)
+      if (!sharedFolder) {
+        new Notice(`Shared folder '${preview.folderName}' is not joined on this device yet.`)
+        return
+      }
+
+      const target = await resolveFileShareLink(this, preview.folderId, token)
+      const resolvedRelativePath = this.resolveOpenRelativePath(preview.folderId, target)
+      const fullPath = `${sharedFolder.path}/${resolvedRelativePath}`
+      const targetFile = await this.waitForSharedFileOnDisk(fullPath)
+      if (!targetFile) {
+        const folderSession = this.folderSessions.get(preview.folderId)
+        const fileStillInTree = target.fileId
+          ? Boolean(folderSession?.fileTree.getByFileId(target.fileId))
+          : Boolean(folderSession?.fileTree.getFile(resolvedRelativePath))
+        if (fileStillInTree) {
+          new Notice('File is not synced yet. Try again shortly.')
+        } else {
+          new Notice('This shared file no longer exists.')
+        }
+        return
+      }
+
+      const leaf = this.app.workspace.getLeaf(true)
+      await leaf.openFile(targetFile)
+    } catch (error) {
+      const raw = rawErrorMessage(error, 'Failed to open shared file')
+      new Notice(friendlyError(raw))
+      console.error('[teams] File-link deep-link handling failed:', error)
+    }
   }
 
   private openPluginSettings(): void {
@@ -1528,13 +1672,13 @@ export default class ObsidianTeamsPlugin extends Plugin {
     return friendlyError(message || fallback)
   }
 
-  private async ensureHostedBillingSession(): Promise<string | null> {
+  private ensureHostedBillingSession(): Promise<string | null> {
     if (this.settings.hostedSessionToken) {
-      return this.settings.hostedSessionToken
+      return Promise.resolve(this.settings.hostedSessionToken)
     }
 
     new Notice('Hosted account verification required. Send and verify a code in settings first.')
-    return null
+    return Promise.resolve(null)
   }
 
   async startHostedAccountOtp(): Promise<boolean> {

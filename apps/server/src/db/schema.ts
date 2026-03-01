@@ -541,6 +541,25 @@ export function initDb(): void {
       revoked_by TEXT
     );
 
+    CREATE TABLE IF NOT EXISTS file_share_links (
+      token_hash TEXT PRIMARY KEY,
+      folder_id TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+      file_id TEXT,
+      relative_path TEXT NOT NULL,
+      file_name TEXT NOT NULL,
+      created_by TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      expires_at TEXT NOT NULL,
+      revoked_at TEXT,
+      revoked_by TEXT,
+      open_count INTEGER NOT NULL DEFAULT 0
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_file_share_links_folder_created
+      ON file_share_links (folder_id, created_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_file_share_links_expires
+      ON file_share_links (expires_at);
+
     CREATE TABLE IF NOT EXISTS revoked_tokens (
       jti TEXT PRIMARY KEY,
       folder_id TEXT NOT NULL,
@@ -710,6 +729,12 @@ export function initDb(): void {
 
     CREATE INDEX IF NOT EXISTS idx_members_folder_account
       ON members (folder_id, account_id);
+
+    CREATE INDEX IF NOT EXISTS idx_file_share_links_folder_created
+      ON file_share_links (folder_id, created_at DESC);
+
+    CREATE INDEX IF NOT EXISTS idx_file_share_links_expires
+      ON file_share_links (expires_at);
 
     UPDATE invites
     SET max_uses = COALESCE(max_uses, 1),

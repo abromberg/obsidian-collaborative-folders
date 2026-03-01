@@ -98,6 +98,42 @@ export interface InvitePreviewResponse {
   remainingUses: number
 }
 
+/** Server request payload when creating a file share link. */
+export interface CreateFileShareLinkRequest {
+  fileId?: string
+  relativePath: string
+  fileName: string
+  expiresInHours?: number
+}
+
+/** Server response payload when creating a file share link. */
+export interface CreateFileShareLinkResponse {
+  shareToken: string
+  shareUrl: string
+  expiresAt: string
+}
+
+/** Public metadata for a file share link without revealing file paths. */
+export interface FileShareLinkPreviewResponse {
+  folderId: string
+  folderName: string
+  fileName: string
+  expiresAt: string
+}
+
+/** Server request payload when resolving a file share link inside a folder. */
+export interface ResolveFileShareLinkRequest {
+  token: string
+}
+
+/** Authenticated response payload used to open a shared file. */
+export interface ResolveFileShareLinkResponse {
+  folderId: string
+  fileId: string | null
+  relativePath: string
+  fileName: string
+}
+
 export interface HostedAccountProfile {
   id: string
   email: string

@@ -5,6 +5,11 @@ import type {
   RedeemResponse,
   InvitePreviewResponse,
   InviteResponse,
+  CreateFileShareLinkRequest,
+  CreateFileShareLinkResponse,
+  FileShareLinkPreviewResponse,
+  ResolveFileShareLinkRequest,
+  ResolveFileShareLinkResponse,
   AccessTokenPayload,
   RefreshResponse,
   FolderMemberRecord,
@@ -281,6 +286,45 @@ export async function createInvite(
   return readJson<InviteResponse>(response)
 }
 
+/** Request the server to generate a file share link for a specific file path. */
+export async function createFileShareLink(
+  plugin: ObsidianTeamsPlugin,
+  folderId: string,
+  payload: {
+    fileId?: string | null
+    relativePath: string
+    fileName: string
+    expiresInHours?: number
+  }
+): Promise<CreateFileShareLinkResponse> {
+  const token = await getFolderBearerToken(plugin, folderId)
+  const requestPayload: CreateFileShareLinkRequest = {
+    relativePath: payload.relativePath,
+    fileName: payload.fileName,
+  }
+  if (payload.fileId) requestPayload.fileId = payload.fileId
+  if (typeof payload.expiresInHours === 'number') requestPayload.expiresInHours = payload.expiresInHours
+
+  const response = await httpRequest(
+    `${plugin.settings.serverUrl}/api/folders/${encodeURIComponent(folderId)}/file-links`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        'Content-Type': 'application/json',
+        [PROTOCOL_HEADER]: PROTOCOL_V2,
+      },
+      body: JSON.stringify(requestPayload),
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error(await readHttpErrorMessage(response))
+  }
+
+  return readJson<CreateFileShareLinkResponse>(response)
+}
+
 async function getFolderBearerToken(plugin: ObsidianTeamsPlugin, folderId: string): Promise<string> {
   const token = await getOrRefreshToken(plugin, folderId)
   if (!token) {
@@ -450,6 +494,67 @@ export async function previewInvite(
   }
 
   return readJson<InvitePreviewResponse>(response)
+}
+
+/** Preview a file share link without revealing private path metadata. */
+export async function previewFileShareLink(
+  serverUrl: string,
+  token: string
+): Promise<FileShareLinkPreviewResponse> {
+  const normalizedToken = token.trim()
+  if (!normalizedToken) {
+    throw new Error('Missing token')
+  }
+
+  const response = await httpRequest(
+    `${serverUrl}/api/file-links/preview?token=${encodeURIComponent(normalizedToken)}`,
+    {
+      headers: {
+        [PROTOCOL_HEADER]: PROTOCOL_V2,
+      },
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error(await readHttpErrorMessage(response))
+  }
+
+  return readJson<FileShareLinkPreviewResponse>(response)
+}
+
+/** Resolve a file share link into openable file target data for an authorized member. */
+export async function resolveFileShareLink(
+  plugin: ObsidianTeamsPlugin,
+  folderId: string,
+  token: string
+): Promise<ResolveFileShareLinkResponse> {
+  const normalizedToken = token.trim()
+  if (!normalizedToken) {
+    throw new Error('Missing token')
+  }
+
+  const bearerToken = await getFolderBearerToken(plugin, folderId)
+  const payload: ResolveFileShareLinkRequest = {
+    token: normalizedToken,
+  }
+  const response = await httpRequest(
+    `${plugin.settings.serverUrl}/api/folders/${encodeURIComponent(folderId)}/file-links/resolve`,
+    {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${bearerToken}`,
+        'Content-Type': 'application/json',
+        [PROTOCOL_HEADER]: PROTOCOL_V2,
+      },
+      body: JSON.stringify(payload),
+    }
+  )
+
+  if (!response.ok) {
+    throw new Error(await readHttpErrorMessage(response))
+  }
+
+  return readJson<ResolveFileShareLinkResponse>(response)
 }
 
 function sessionExpiresSoon(expiresAt: string): boolean {

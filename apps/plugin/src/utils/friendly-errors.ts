@@ -32,6 +32,19 @@ const ERROR_MAP: Array<{ pattern: RegExp; message: string }> = [
     message: 'This invite is no longer valid. Ask the folder owner for a new one.',
   },
   {
+    pattern:
+      /file link.*(expired|revoked|invalid|not found)|file_link.*(expired|revoked)|file link is no longer valid/i,
+    message: 'This shared file link is no longer valid. Ask a collaborator to generate a new one.',
+  },
+  {
+    pattern: /no active membership|token does not grant access|insufficient role|missing access token for this shared folder/i,
+    message: "You don't have access to this shared file.",
+  },
+  {
+    pattern: /file is not synced yet|not synced yet|sync catches up/i,
+    message: 'This file is still syncing on this device. Try again shortly.',
+  },
+  {
     pattern: /rate.?limit|quota.?exceeded|too many requests/i,
     message: 'Too many requests. Please wait a moment and try again.',
   },
