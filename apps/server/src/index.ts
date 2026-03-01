@@ -28,6 +28,7 @@ import { getDb, initDb } from './db/schema.js'
 import { getSecurityMetrics } from './security/metrics.js'
 import { EncryptedRelay } from './ws/encrypted-relay.js'
 import { redactValue } from './security/redaction.js'
+import { requireAdminToken } from './middleware/require-admin-token.js'
 import {
   hostedMaxFileSizeBytes,
   hostedSeatPriceCents,
@@ -1890,14 +1891,16 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', version: '0.2.0', protocolGateEnabled: PROTOCOL_GATE_ENABLED })
 })
 
-app.get('/health/security', (_req, res) => {
+app.get('/health/security', (req, res) => {
+  if (!requireAdminToken(req, res)) return
   res.json({
     status: 'ok',
     metrics: getSecurityMetrics(),
   })
 })
 
-app.get('/health/hosted', (_req, res) => {
+app.get('/health/hosted', (req, res) => {
+  if (!requireAdminToken(req, res)) return
   if (!HOSTED_MODE) {
     res.status(404).json({
       status: 'disabled',

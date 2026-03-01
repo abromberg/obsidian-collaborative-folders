@@ -2,26 +2,12 @@
 import { Router, type Request, type Response } from 'express'
 import fs from 'fs'
 import { getDb } from '../db/schema.js'
+import { requireAdminToken } from '../middleware/require-admin-token.js'
 
 export const resetVerificationRouter: ReturnType<typeof Router> = Router()
 
-const RESET_VERIFICATION_TOKEN = process.env.RESET_VERIFICATION_TOKEN || ''
 const BLOB_DIR = process.env.BLOB_DIR || './data/blobs'
 const PROTOCOL_GATE_ENABLED = true
-
-function requireResetToken(req: Request, res: Response): boolean {
-  if (!RESET_VERIFICATION_TOKEN) {
-    res.status(403).json({ error: 'Reset verification endpoint is disabled' })
-    return false
-  }
-  const tokenFromQuery = typeof req.query.token === 'string' ? req.query.token : null
-  const provided = req.header('x-reset-verification-token') || tokenFromQuery
-  if (provided !== RESET_VERIFICATION_TOKEN) {
-    res.status(401).json({ error: 'Invalid or missing reset verification token' })
-    return false
-  }
-  return true
-}
 
 function countRows(tableName: string): number {
   const db = getDb()
@@ -58,7 +44,7 @@ function countBlobFiles(): number {
 }
 
 resetVerificationRouter.get('/reset-verification', (req: Request, res: Response) => {
-  if (!requireResetToken(req, res)) return
+  if (!requireAdminToken(req, res)) return
 
   const counts = {
     folders: countRows('folders'),
