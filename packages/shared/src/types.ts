@@ -111,6 +111,10 @@ export interface HostedSessionResponse {
   expiresAt: string
 }
 
+export interface HostedOtpStartResponse {
+  success: true
+}
+
 export interface HostedAccountBillingRecord {
   subscriptionStatus: string
   priceCents: number
@@ -141,6 +145,8 @@ export interface HostedCheckoutSessionResponse {
 export interface HostedPortalSessionResponse {
   portalUrl: string
 }
+
+export type HostedBillingErrorCode = 'subscription_already_active' | 'subscription_requires_portal'
 
 export type HostedEntitlementCode =
   | 'hosted_session_required'

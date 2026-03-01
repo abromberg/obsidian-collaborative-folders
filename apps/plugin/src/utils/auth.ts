@@ -12,6 +12,7 @@ import type {
   RemoveMemberResponse,
   RotateFolderKeyRequest,
   HostedSessionResponse,
+  HostedOtpStartResponse,
   HostedAuthMeResponse,
   HostedCheckoutSessionResponse,
   HostedPortalSessionResponse,
@@ -37,8 +38,13 @@ interface RawFolderMembersResponse {
 
 function readErrorMessage(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object') return null
-  const value = (payload as { error?: unknown }).error
-  return typeof value === 'string' && value.length > 0 ? value : null
+  const data = payload as { error?: unknown; code?: unknown }
+  const error = typeof data.error === 'string' ? data.error.trim() : ''
+  const code = typeof data.code === 'string' ? data.code.trim() : ''
+  if (code && error) return `${code}: ${error}`
+  if (error) return error
+  if (code) return code
+  return null
 }
 
 async function readJson<T>(response: HttpResponseLike): Promise<T> {
@@ -453,7 +459,7 @@ function sessionExpiresSoon(expiresAt: string): boolean {
   return expiryMs - Date.now() <= 60_000
 }
 
-/** Refresh hosted session in the background using stored hosted email. */
+/** Refresh hosted billing snapshot for an existing hosted session. */
 export async function silentHostedRelink(
   plugin: ObsidianTeamsPlugin,
   options: { force?: boolean } = {}
@@ -467,16 +473,20 @@ export async function silentHostedRelink(
     return false
   }
 
+  const hostedSessionToken = plugin.settings.hostedSessionToken
+  if (!hostedSessionToken) {
+    return false
+  }
+
   const force = options.force ?? false
   const shouldRelink =
     force ||
-    !plugin.settings.hostedSessionToken ||
     sessionExpiresSoon(plugin.settings.hostedSessionExpiresAt)
 
   if (!shouldRelink) {
-    if (!plugin.settings.hostedSubscriptionStatus && plugin.settings.hostedSessionToken) {
+    if (!plugin.settings.hostedSubscriptionStatus) {
       try {
-        const snapshot = await getHostedAuthMe(plugin.settings.serverUrl, plugin.settings.hostedSessionToken)
+        const snapshot = await getHostedAuthMe(plugin.settings.serverUrl, hostedSessionToken)
         plugin.settings.hostedSubscriptionStatus = snapshot.billing.subscriptionStatus || 'inactive'
         await plugin.saveSettings()
       } catch {
@@ -487,46 +497,62 @@ export async function silentHostedRelink(
   }
 
   try {
-    const session = await createHostedSession(
-      plugin.settings.serverUrl,
-      email,
-      plugin.settings.displayName || plugin.settings.hostedAccountDisplayName || email.split('@')[0] || 'Collaborator'
-    )
-    plugin.settings.hostedAccountEmail = session.account.email
-    plugin.settings.hostedSessionToken = session.sessionToken
-    plugin.settings.hostedSessionExpiresAt = session.expiresAt
-    plugin.settings.hostedSubscriptionStatus = ''
-    if (session.account.displayName) {
-      plugin.settings.hostedAccountDisplayName = session.account.displayName
+    const snapshot = await getHostedAuthMe(plugin.settings.serverUrl, hostedSessionToken)
+    plugin.settings.hostedAccountEmail = snapshot.account.email
+    plugin.settings.hostedSessionExpiresAt = snapshot.account.expiresAt
+    plugin.settings.hostedSubscriptionStatus = snapshot.billing.subscriptionStatus || 'inactive'
+    if (snapshot.account.displayName) {
+      plugin.settings.hostedAccountDisplayName = snapshot.account.displayName
       if (!plugin.settings.displayName) {
-        plugin.settings.displayName = session.account.displayName
+        plugin.settings.displayName = snapshot.account.displayName
       }
-    }
-    try {
-      const snapshot = await getHostedAuthMe(plugin.settings.serverUrl, session.sessionToken)
-      plugin.settings.hostedSubscriptionStatus = snapshot.billing.subscriptionStatus || 'inactive'
-    } catch {
-      // Best effort only; session refresh should still succeed even if snapshot lookup fails.
     }
     await plugin.saveSettings()
     return true
   } catch {
+    if (sessionExpiresSoon(plugin.settings.hostedSessionExpiresAt)) {
+      plugin.settings.hostedSessionToken = ''
+      plugin.settings.hostedSessionExpiresAt = ''
+      plugin.settings.hostedSubscriptionStatus = ''
+      await plugin.saveSettings()
+    }
     return false
   }
 }
 
-export async function createHostedSession(
+export async function startHostedOtp(
   serverUrl: string,
-  email: string,
-  displayName: string
-): Promise<HostedSessionResponse> {
-  const response = await httpRequest(`${serverUrl}/api/hosted/auth/session`, {
+  email: string
+): Promise<HostedOtpStartResponse> {
+  const response = await httpRequest(`${serverUrl}/api/hosted/auth/otp/start`, {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
       [PROTOCOL_HEADER]: PROTOCOL_V2,
     },
-    body: JSON.stringify({ email, displayName }),
+    body: JSON.stringify({ email }),
+  })
+
+  if (!response.ok) {
+    throw new Error(await readHttpErrorMessage(response))
+  }
+
+  return readJson<HostedOtpStartResponse>(response)
+}
+
+export async function verifyHostedOtp(
+  serverUrl: string,
+  email: string,
+  code: string,
+  displayName: string
+): Promise<HostedSessionResponse> {
+  const response = await httpRequest(`${serverUrl}/api/hosted/auth/otp/verify`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      [PROTOCOL_HEADER]: PROTOCOL_V2,
+    },
+    body: JSON.stringify({ email, code, displayName }),
   })
 
   if (!response.ok) {

@@ -23,6 +23,9 @@ export const hostedBillingRouter: ReturnType<typeof Router> = Router()
 const STRIPE_API_BASE = 'https://api.stripe.com'
 const WEBHOOK_TOLERANCE_SECONDS = Number(process.env.STRIPE_WEBHOOK_TOLERANCE_SECONDS || 300)
 const COLLABORATION_ALLOWED_STATUSES = new Set(['active', 'trialing'])
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set(['active', 'trialing'])
+const NON_TERMINAL_NON_ACTIVE_SUBSCRIPTION_STATUSES = new Set(['past_due', 'unpaid', 'incomplete', 'paused'])
+const TERMINAL_SUBSCRIPTION_STATUSES = new Set(['canceled', 'incomplete_expired'])
 const BILLING_SYSTEM_ACTOR = 'system:billing'
 
 interface CheckoutBody {
@@ -64,6 +67,13 @@ interface StripeSubscriptionObject {
       id?: string
     }>
   }
+}
+
+interface StripeSubscriptionListResponse {
+  data?: Array<{
+    id?: string
+    status?: string
+  }>
 }
 
 interface StripeEvent {
@@ -385,6 +395,24 @@ async function stripePost(
   return { status: response.status, payload }
 }
 
+async function stripeGet(
+  path: string,
+  options: {
+    stripeSecret: string
+  }
+): Promise<{ status: number; payload: unknown }> {
+  const response = await globalThis.fetch(`${STRIPE_API_BASE}${path}`, {
+    method: 'GET',
+    headers: {
+      Authorization: `Bearer ${options.stripeSecret}`,
+      'Content-Type': 'application/x-www-form-urlencoded',
+    },
+  })
+
+  const payload = await response.json().catch(() => ({}))
+  return { status: response.status, payload }
+}
+
 function readStripeErrorMessage(payload: unknown): string | null {
   if (!payload || typeof payload !== 'object') return null
   const error = (payload as { error?: unknown }).error
@@ -582,6 +610,50 @@ function loadAccountSubscriptionStatus(db: ReturnType<typeof getDb>, accountId: 
     )
     .get(accountId) as AccountBillingStatusRow | undefined
   return normalizeSubscriptionStatus(row?.subscription_status)
+}
+
+function resolveCheckoutBlock(status: string): {
+  code: 'subscription_already_active' | 'subscription_requires_portal'
+  error: string
+} | null {
+  const normalized = normalizeSubscriptionStatus(status)
+  if (ACTIVE_SUBSCRIPTION_STATUSES.has(normalized)) {
+    return {
+      code: 'subscription_already_active',
+      error: 'Subscription already exists. Open billing portal to manage it.',
+    }
+  }
+  if (NON_TERMINAL_NON_ACTIVE_SUBSCRIPTION_STATUSES.has(normalized)) {
+    return {
+      code: 'subscription_requires_portal',
+      error: 'Subscription requires billing portal action before creating a new checkout.',
+    }
+  }
+  return null
+}
+
+function readStripeSubscriptionStatuses(payload: unknown): string[] {
+  if (!payload || typeof payload !== 'object') return []
+  const subscriptions = (payload as StripeSubscriptionListResponse).data
+  if (!Array.isArray(subscriptions)) return []
+  return subscriptions
+    .map((item) => normalizeSubscriptionStatus(item.status))
+    .filter((status) => !TERMINAL_SUBSCRIPTION_STATUSES.has(status))
+}
+
+async function findBlockingStripeStatus(
+  stripeSecret: string,
+  customerId: string
+): Promise<string | null> {
+  const path = `/v1/subscriptions?customer=${encodeURIComponent(customerId)}&status=all&limit=20`
+  const stripe = await stripeGet(path, { stripeSecret })
+  if (stripe.status < 200 || stripe.status >= 300) {
+    const message = readStripeErrorMessage(stripe.payload) || `Stripe subscription check failed (${stripe.status})`
+    throw new Error(message)
+  }
+
+  const nonTerminalStatuses = readStripeSubscriptionStatuses(stripe.payload)
+  return nonTerminalStatuses[0] || null
 }
 
 function revokeEditorAccessForAccount(
@@ -823,9 +895,9 @@ hostedBillingRouter.get('/return', (req: Request, res: Response) => {
 })
 
 /** POST /api/hosted/billing/checkout-session — create Stripe checkout session for account. */
-async function handleCheckoutSession(
+export async function handleCheckoutSession(
   req: Request<Record<string, never>, unknown, CheckoutBody>,
-  res: Response<HostedCheckoutSessionResponse | { error: string }>
+  res: Response<HostedCheckoutSessionResponse | { error: string; code?: string }>
 ): Promise<void> {
   const actor = resolveSessionActor(req, res)
   if (!actor) return
@@ -835,6 +907,32 @@ async function handleCheckoutSession(
 
   const db = getDb()
   const access = resolveBillingAccount(db, actor.accountId)
+  const localBlock = resolveCheckoutBlock(access.subscription_status)
+  if (localBlock) {
+    res.status(409).json(localBlock)
+    return
+  }
+
+  if (access.stripe_customer_id) {
+    try {
+      const stripeBlockingStatus = await findBlockingStripeStatus(stripeSecret, access.stripe_customer_id)
+      if (stripeBlockingStatus) {
+        const stripeBlock = resolveCheckoutBlock(stripeBlockingStatus) || {
+          code: 'subscription_requires_portal' as const,
+          error: 'Subscription requires billing portal action before creating a new checkout.',
+        }
+        res.status(409).json(stripeBlock)
+        return
+      }
+    } catch (error: unknown) {
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'Failed to verify Stripe subscription state'
+      res.status(502).json({ error: message })
+      return
+    }
+  }
+
   const accountProfile = db
     .prepare(
       `
@@ -865,10 +963,7 @@ async function handleCheckoutSession(
     customer_email: checkoutCustomerEmail,
   })
 
-  const idempotencyKey = crypto
-    .createHash('sha256')
-    .update(`checkout:${actor.accountId}`)
-    .digest('hex')
+  const idempotencyKey = `checkout:${actor.accountId}:${Date.now()}:${crypto.randomUUID()}`
 
   const stripe = await stripePost('/v1/checkout/sessions', body, {
     stripeSecret,
@@ -897,7 +992,7 @@ hostedBillingRouter.post(
   '/checkout-session',
   (
     req: Request<Record<string, never>, unknown, CheckoutBody>,
-    res: Response<HostedCheckoutSessionResponse | { error: string }>
+    res: Response<HostedCheckoutSessionResponse | { error: string; code?: string }>
   ) => {
     void handleCheckoutSession(req, res).catch((error: unknown) => {
       const message = error instanceof Error && error.message

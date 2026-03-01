@@ -8,8 +8,12 @@ const ERROR_MAP: Array<{ pattern: RegExp; message: string }> = [
     message: 'Your subscription payment failed. Update your payment method in billing settings.',
   },
   {
+    pattern: /subscription_already_active|subscription_requires_portal/i,
+    message: 'Subscription already exists. Open Manage billing in settings.',
+  },
+  {
     pattern: /hosted_session_required|hosted session|hosted account link is required/i,
-    message: 'Account setup required. Add your email and subscribe in plugin settings.',
+    message: 'Account setup required. Verify your email in plugin settings before billing actions.',
   },
   {
     pattern: /needs owner rekey|rekey required|envelope is unavailable/i,
@@ -62,6 +66,10 @@ export function isSubscriptionPastDueError(raw: string): boolean {
   return /subscription_past_due|past due/i.test(raw)
 }
 
+export function isSubscriptionPortalError(raw: string): boolean {
+  return /subscription_already_active|subscription_requires_portal/i.test(raw)
+}
+
 export function isNetworkError(raw: string): boolean {
   return /failed to fetch|network|enotfound|name_not_resolved|err_name_not_resolved|cors/i.test(raw)
 }
@@ -76,6 +84,7 @@ export function isConfigError(raw: string): boolean {
     isHostedSessionError(raw) ||
     isSubscriptionInactiveError(raw) ||
     isSubscriptionPastDueError(raw) ||
+    isSubscriptionPortalError(raw) ||
     isNetworkError(raw)
   )
 }

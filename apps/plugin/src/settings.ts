@@ -17,6 +17,7 @@ export interface ObsidianTeamsSettings {
   debugLogging: boolean
   hostedAccountEmail: string
   hostedAccountDisplayName: string
+  hostedOtpCode: string
   hostedSessionToken: string
   hostedSessionExpiresAt: string
   hostedSubscriptionStatus: string
@@ -36,6 +37,7 @@ export const DEFAULT_SETTINGS: ObsidianTeamsSettings = {
   debugLogging: false,
   hostedAccountEmail: '',
   hostedAccountDisplayName: '',
+  hostedOtpCode: '',
   hostedSessionToken: '',
   hostedSessionExpiresAt: '',
   hostedSubscriptionStatus: '',
@@ -86,6 +88,18 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
   private isHostedSubscriptionActive(status: string): boolean {
     const normalized = status.trim().toLowerCase()
     return normalized === 'active' || normalized === 'trialing'
+  }
+
+  private isHostedSubscriptionManagedInPortal(status: string): boolean {
+    const normalized = status.trim().toLowerCase()
+    return (
+      normalized === 'active'
+      || normalized === 'trialing'
+      || normalized === 'past_due'
+      || normalized === 'unpaid'
+      || normalized === 'incomplete'
+      || normalized === 'paused'
+    )
   }
 
   private renderPendingInviteBanner(containerEl: HTMLElement): void {
@@ -143,12 +157,12 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
     containerEl.createEl('p', {
       cls: 'setting-item-description',
       text:
-        'Managed hosted service flow. Subscription actions automatically create/refresh your hosted account session.',
+        'Managed hosted service flow. Verify your email with a one-time code before billing actions.',
     })
 
     new Setting(containerEl)
       .setName('Hosted account email')
-      .setDesc('Used by Subscribe/Manage billing to create or refresh your hosted account session.')
+      .setDesc('Used for one-time-code verification before opening checkout or billing portal.')
       .addText((text) =>
         text
           .setPlaceholder('name@example.com')
@@ -162,11 +176,38 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
             if (nextEmail !== previousEmail) {
               this.plugin.settings.hostedSessionToken = ''
               this.plugin.settings.hostedSessionExpiresAt = ''
+              this.plugin.settings.hostedSubscriptionStatus = ''
+              this.plugin.settings.hostedOtpCode = ''
             }
 
             await this.plugin.saveSettings()
           })
       )
+
+    new Setting(containerEl)
+      .setName('Verification code')
+      .setDesc('Enter the email code, then verify to create a hosted session.')
+      .addText((text) =>
+        text
+          .setPlaceholder('123456')
+          .setValue(this.plugin.settings.hostedOtpCode)
+          .onChange(async (value) => {
+            this.plugin.settings.hostedOtpCode = value.trim()
+            await this.plugin.saveSettings()
+          })
+      )
+      .addButton((btn) => {
+        btn.setButtonText('Send code').onClick(async () => {
+          const sent = await this.plugin.startHostedAccountOtp()
+          if (sent) this.display()
+        })
+      })
+      .addButton((btn) => {
+        btn.setButtonText('Verify').setCta().onClick(async () => {
+          const verified = await this.plugin.verifyHostedAccountOtp(this.plugin.settings.hostedOtpCode)
+          if (verified) this.display()
+        })
+      })
 
     const hasHostedSession = Boolean(this.plugin.settings.hostedSessionToken)
     const hasResolvedSubscriptionStatus = this.plugin.settings.hostedSubscriptionStatus.trim().length > 0
@@ -174,6 +215,8 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
       ? this.plugin.settings.hostedSubscriptionStatus
       : 'unknown'
     const subscriptionActive = hasResolvedSubscriptionStatus && this.isHostedSubscriptionActive(subscriptionStatus)
+    const subscriptionManagedInPortal =
+      hasResolvedSubscriptionStatus && this.isHostedSubscriptionManagedInPortal(subscriptionStatus)
     const statusMessage = hasHostedSession
       ? subscriptionActive
         ? 'Hosted account session is active. Subscription is active.'
@@ -203,16 +246,18 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
       .setDesc(
         hasHostedSession && !hasResolvedSubscriptionStatus
           ? 'Checking subscription status...'
-          : subscriptionActive
+          : subscriptionManagedInPortal
             ? 'Manage your billing subscription.'
-            : 'Start your hosted subscription.'
+            : hasHostedSession
+              ? 'Start your hosted subscription.'
+              : 'Verify your email first, then start your subscription.'
       )
       .addButton((btn) => {
         if (hasHostedSession && !hasResolvedSubscriptionStatus) {
           btn.setButtonText('Checking...').setDisabled(true)
           return
         }
-        if (subscriptionActive) {
+        if (subscriptionManagedInPortal) {
           btn.setButtonText('Manage billing').onClick(async () => {
             await this.plugin.openHostedBillingPortal()
           })

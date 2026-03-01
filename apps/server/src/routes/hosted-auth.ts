@@ -1,9 +1,15 @@
 /* eslint-disable import/no-nodejs-modules -- Server runtime intentionally depends on Node.js built-in modules. */
 import { Router, type Request, type Response } from 'express'
 import crypto from 'crypto'
-import type { HostedAuthMeResponse, HostedSessionResponse } from '@obsidian-teams/shared'
+import type { HostedAuthMeResponse, HostedOtpStartResponse, HostedSessionResponse } from '@obsidian-teams/shared'
 import { getDb } from '../db/schema.js'
-import { hostedMaxFileSizeBytes, hostedSeatPriceCents, hostedStorageCapBytes } from '../config/hosted.js'
+import {
+  hostedMaxFileSizeBytes,
+  hostedSeatPriceCents,
+  hostedStorageCapBytes,
+  hostedSupabaseAuthKey,
+  hostedSupabaseUrl,
+} from '../config/hosted.js'
 import {
   extractHostedSessionToken,
   issueHostedSession,
@@ -14,8 +20,18 @@ import {
 
 export const hostedAuthRouter: ReturnType<typeof Router> = Router()
 
-interface CreateHostedSessionBody {
+interface HostedErrorResponse {
+  error: string
+  code?: string
+}
+
+interface HostedOtpStartBody {
   email?: string
+}
+
+interface HostedOtpVerifyBody {
+  email?: string
+  code?: string
   displayName?: string
 }
 
@@ -41,13 +57,124 @@ interface HostedAccountSnapshotRow {
   owned_storage_bytes: number | null
 }
 
+interface SupabaseAuthResponse {
+  status: number
+  payload: unknown
+}
+
 function deriveDisplayName(email: string, proposed?: string | null): string {
   const trimmed = proposed?.trim()
   if (trimmed) return trimmed
   return email.split('@')[0] || email
 }
 
-function resolveSessionActor(req: Request, res: Response) {
+function readSupabaseErrorMessage(payload: unknown, fallback: string): string {
+  if (!payload || typeof payload !== 'object') return fallback
+  const record = payload as Record<string, unknown>
+  const descriptions = [record.error_description, record.msg, record.error]
+  for (const value of descriptions) {
+    if (typeof value === 'string' && value.trim()) return value
+  }
+  return fallback
+}
+
+function normalizeSupabaseAuthBase(url: string): string {
+  return url.replace(/\/+$/, '')
+}
+
+function resolveSupabaseAuthConfig(
+  res: Response
+): { baseUrl: string; authKey: string } | null {
+  const baseUrl = hostedSupabaseUrl()
+  const authKey = hostedSupabaseAuthKey()
+  if (!baseUrl || !authKey) {
+    res.status(503).json({
+      error: 'Hosted auth is not configured',
+      code: 'hosted_auth_unavailable',
+    })
+    return null
+  }
+  return {
+    baseUrl: normalizeSupabaseAuthBase(baseUrl),
+    authKey,
+  }
+}
+
+async function postSupabaseAuth(
+  baseUrl: string,
+  authKey: string,
+  path: '/auth/v1/otp' | '/auth/v1/verify',
+  payload: Record<string, unknown>
+): Promise<SupabaseAuthResponse> {
+  const response = await globalThis.fetch(`${baseUrl}${path}`, {
+    method: 'POST',
+    headers: {
+      apikey: authKey,
+      Authorization: `Bearer ${authKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify(payload),
+  })
+  const parsed = await response.json().catch(() => ({}))
+  return {
+    status: response.status,
+    payload: parsed,
+  }
+}
+
+function upsertHostedAccountByEmail(
+  email: string,
+  requestedDisplayName: string | null
+): HostedAccountRow | null {
+  const db = getDb()
+
+  let account = db
+    .prepare(
+      `
+      SELECT id, email_norm, display_name, status
+      FROM hosted_accounts
+      WHERE email_norm = ?
+      LIMIT 1
+    `
+    )
+    .get(email) as HostedAccountRow | undefined
+
+  if (!account) {
+    const accountId = crypto.randomUUID()
+    db.prepare(
+      `
+      INSERT INTO hosted_accounts (id, email_norm, display_name, status, created_at, updated_at)
+      VALUES (?, ?, ?, 'active', datetime('now'), datetime('now'))
+    `
+    ).run(accountId, email, deriveDisplayName(email, requestedDisplayName))
+
+    account = db
+      .prepare(
+        `
+        SELECT id, email_norm, display_name, status
+        FROM hosted_accounts
+        WHERE id = ?
+        LIMIT 1
+      `
+      )
+      .get(accountId) as HostedAccountRow | undefined
+  } else if (requestedDisplayName) {
+    db.prepare(
+      `
+      UPDATE hosted_accounts
+      SET display_name = ?,
+          updated_at = datetime('now')
+      WHERE id = ?
+    `
+    ).run(requestedDisplayName, account.id)
+
+    account.display_name = requestedDisplayName
+  }
+
+  return account || null
+}
+
+function resolveSessionActor(req: Request, res: Response<HostedAuthMeResponse | HostedErrorResponse>) {
   const db = getDb()
   const sessionToken = extractHostedSessionToken(req)
   if (!sessionToken) {
@@ -70,72 +197,107 @@ function resolveSessionActor(req: Request, res: Response) {
   return actor
 }
 
-/** POST /api/hosted/auth/session — create or refresh hosted account session by email identity. */
-hostedAuthRouter.post(
-  '/session',
-  (
-    req: Request<Record<string, never>, unknown, CreateHostedSessionBody>,
-    res: Response<HostedSessionResponse | { error: string }>
-  ) => {
+/** POST /api/hosted/auth/otp/start — send a Supabase email OTP code. */
+export async function handleHostedOtpStart(
+  req: Request<Record<string, never>, unknown, HostedOtpStartBody>,
+  res: Response<HostedOtpStartResponse | HostedErrorResponse>
+): Promise<void> {
   const email = normalizeHostedEmail(req.body.email || '')
   if (!email) {
     res.status(400).json({ error: 'Valid email is required' })
     return
   }
 
-  const db = getDb()
-  const requestedDisplayName = req.body.displayName?.trim() || null
+  const supabase = resolveSupabaseAuthConfig(res)
+  if (!supabase) return
 
-  let account = db
-    .prepare(
-      `
-      SELECT id, email_norm, display_name, status
-      FROM hosted_accounts
-      WHERE email_norm = ?
-      LIMIT 1
-    `
-    )
-    .get(email) as HostedAccountRow | undefined
+  const otpStart = await postSupabaseAuth(supabase.baseUrl, supabase.authKey, '/auth/v1/otp', {
+    email,
+    create_user: true,
+    should_create_user: true,
+  })
 
-  if (!account) {
-    const id = crypto.randomUUID()
-    db.prepare(
-      `
-      INSERT INTO hosted_accounts (id, email_norm, display_name, status, created_at, updated_at)
-      VALUES (?, ?, ?, 'active', datetime('now'), datetime('now'))
-    `
-    ).run(id, email, deriveDisplayName(email, requestedDisplayName))
-
-    account = db
-      .prepare(
-        `
-        SELECT id, email_norm, display_name, status
-        FROM hosted_accounts
-        WHERE id = ?
-        LIMIT 1
-      `
-      )
-      .get(id) as HostedAccountRow | undefined
-  } else if (requestedDisplayName) {
-    db.prepare(
-      `
-      UPDATE hosted_accounts
-      SET display_name = ?,
-          updated_at = datetime('now')
-      WHERE id = ?
-    `
-    ).run(requestedDisplayName, account.id)
-
-    account.display_name = requestedDisplayName
+  if (otpStart.status < 200 || otpStart.status >= 300) {
+    const message = readSupabaseErrorMessage(otpStart.payload, 'Failed to send verification code')
+    res.status(502).json({ error: message, code: 'hosted_otp_start_failed' })
+    return
   }
 
+  res.json({ success: true })
+}
+
+hostedAuthRouter.post(
+  '/otp/start',
+  (
+    req: Request<Record<string, never>, unknown, HostedOtpStartBody>,
+    res: Response<HostedOtpStartResponse | HostedErrorResponse>
+  ) => {
+    void handleHostedOtpStart(req, res).catch((error: unknown) => {
+      const message = error instanceof Error && error.message ? error.message : 'Failed to start hosted OTP flow'
+      res.status(500).json({ error: message })
+    })
+  }
+)
+
+/** POST /api/hosted/auth/otp/verify — verify Supabase OTP code and issue hosted session. */
+export async function handleHostedOtpVerify(
+  req: Request<Record<string, never>, unknown, HostedOtpVerifyBody>,
+  res: Response<HostedSessionResponse | HostedErrorResponse>
+): Promise<void> {
+  const email = normalizeHostedEmail(req.body.email || '')
+  const code = (req.body.code || '').trim()
+  if (!email) {
+    res.status(400).json({ error: 'Valid email is required' })
+    return
+  }
+  if (!code) {
+    res.status(400).json({ error: 'Verification code is required' })
+    return
+  }
+
+  const supabase = resolveSupabaseAuthConfig(res)
+  if (!supabase) return
+
+  const verification = await postSupabaseAuth(supabase.baseUrl, supabase.authKey, '/auth/v1/verify', {
+    type: 'email',
+    email,
+    token: code,
+  })
+
+  if (verification.status < 200 || verification.status >= 300) {
+    const message = readSupabaseErrorMessage(verification.payload, 'Failed to verify code')
+    const isInvalidCode = verification.status === 400 || verification.status === 401 || verification.status === 422
+    if (isInvalidCode) {
+      res.status(401).json({ error: message, code: 'hosted_otp_invalid' })
+      return
+    }
+    res.status(502).json({ error: message, code: 'hosted_otp_verify_failed' })
+    return
+  }
+
+  const verifiedEmail = normalizeHostedEmail(
+    (
+      verification.payload as {
+        user?: {
+          email?: string
+        }
+      }
+    ).user?.email || ''
+  )
+
+  if (!verifiedEmail) {
+    res.status(502).json({ error: 'Hosted auth provider response missing verified user email' })
+    return
+  }
+
+  const requestedDisplayName = req.body.displayName?.trim() || null
+  const account = upsertHostedAccountByEmail(verifiedEmail, requestedDisplayName)
   if (!account) {
     res.status(500).json({ error: 'Failed to resolve hosted account' })
     return
   }
 
-  const issued = issueHostedSession(db, account.id)
-
+  const issued = issueHostedSession(getDb(), account.id)
   res.json({
     account: {
       id: account.id,
@@ -146,11 +308,23 @@ hostedAuthRouter.post(
     sessionToken: issued.sessionToken,
     expiresAt: issued.expiresAt,
   })
+}
+
+hostedAuthRouter.post(
+  '/otp/verify',
+  (
+    req: Request<Record<string, never>, unknown, HostedOtpVerifyBody>,
+    res: Response<HostedSessionResponse | HostedErrorResponse>
+  ) => {
+    void handleHostedOtpVerify(req, res).catch((error: unknown) => {
+      const message = error instanceof Error && error.message ? error.message : 'Failed to verify hosted OTP code'
+      res.status(500).json({ error: message })
+    })
   }
 )
 
 /** GET /api/hosted/auth/me — resolve hosted session identity and account billing snapshot. */
-hostedAuthRouter.get('/me', (req: Request, res: Response<HostedAuthMeResponse | { error: string }>) => {
+hostedAuthRouter.get('/me', (req: Request, res: Response<HostedAuthMeResponse | HostedErrorResponse>) => {
   const actor = resolveSessionActor(req, res)
   if (!actor) return
 
@@ -209,7 +383,7 @@ hostedAuthRouter.get('/me', (req: Request, res: Response<HostedAuthMeResponse | 
 })
 
 /** DELETE /api/hosted/auth/session — revoke the current hosted session token. */
-hostedAuthRouter.delete('/session', (req: Request, res: Response) => {
+hostedAuthRouter.delete('/session', (req: Request, res: Response<HostedErrorResponse | { success: true }>) => {
   const sessionToken = extractHostedSessionToken(req)
   if (!sessionToken) {
     res.status(400).json({ error: 'Hosted session token required' })

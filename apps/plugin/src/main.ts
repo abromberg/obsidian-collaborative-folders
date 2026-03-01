@@ -15,7 +15,8 @@ import { AttachmentLocalizer } from './collab/attachment-localizer'
 import {
   createHostedCheckoutSession,
   createHostedPortalSession,
-  createHostedSession,
+  startHostedOtp,
+  verifyHostedOtp,
   silentHostedRelink,
   getHostedAuthMe,
   decodeAccessToken,
@@ -456,6 +457,18 @@ export default class ObsidianTeamsPlugin extends Plugin {
   private isHostedSubscriptionActive(status: string): boolean {
     const normalized = status.trim().toLowerCase()
     return normalized === 'active' || normalized === 'trialing'
+  }
+
+  private isHostedSubscriptionManagedInPortal(status: string): boolean {
+    const normalized = status.trim().toLowerCase()
+    return (
+      normalized === 'active'
+      || normalized === 'trialing'
+      || normalized === 'past_due'
+      || normalized === 'unpaid'
+      || normalized === 'incomplete'
+      || normalized === 'paused'
+    )
   }
 
   private buildHostedBillingReturnUrl(status: 'success' | 'cancel' | 'return'): string {
@@ -1515,16 +1528,11 @@ export default class ObsidianTeamsPlugin extends Plugin {
       return this.settings.hostedSessionToken
     }
 
-    const linked = await this.linkHostedAccount({ silentSuccess: true })
-    if (!linked || !this.settings.hostedSessionToken) {
-      return null
-    }
-
-    new Notice('Hosted account linked. Continuing...')
-    return this.settings.hostedSessionToken
+    new Notice('Hosted account verification required. Send and verify a code in settings first.')
+    return null
   }
 
-  async linkHostedAccount(options: { silentSuccess?: boolean } = {}): Promise<boolean> {
+  async startHostedAccountOtp(): Promise<boolean> {
     if (!this.isHostedMode()) {
       new Notice('Switch Service mode to Hosted service to link a hosted account')
       return false
@@ -1537,9 +1545,47 @@ export default class ObsidianTeamsPlugin extends Plugin {
     }
 
     try {
-      const session = await createHostedSession(
+      await startHostedOtp(
+        this.settings.serverUrl,
+        email
+      )
+      this.settings.hostedAccountEmail = email
+      await this.saveSettings()
+      new Notice(`Verification code sent to ${email}`)
+      return true
+    } catch (error) {
+      const message = this.describeHostedRequestError(error, 'Failed to send verification code')
+      new Notice(message)
+      console.error('[teams] Hosted OTP start failed:', error)
+      return false
+    }
+  }
+
+  async verifyHostedAccountOtp(
+    code: string,
+    options: { silentSuccess?: boolean } = {}
+  ): Promise<boolean> {
+    if (!this.isHostedMode()) {
+      new Notice('Switch Service mode to Hosted service to link a hosted account')
+      return false
+    }
+
+    const email = this.settings.hostedAccountEmail.trim().toLowerCase()
+    const trimmedCode = code.trim()
+    if (!email) {
+      new Notice('Hosted account email is required')
+      return false
+    }
+    if (!trimmedCode) {
+      new Notice('Verification code is required')
+      return false
+    }
+
+    try {
+      const session = await verifyHostedOtp(
         this.settings.serverUrl,
         email,
+        trimmedCode,
         this.effectiveHostedDisplayName()
       )
       this.settings.hostedAccountEmail = session.account.email
@@ -1550,6 +1596,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
       this.settings.hostedSessionToken = session.sessionToken
       this.settings.hostedSessionExpiresAt = session.expiresAt
       this.settings.hostedSubscriptionStatus = ''
+      this.settings.hostedOtpCode = ''
       await this.saveSettings()
       await this.refreshHostedSubscriptionStatus()
       if (!options.silentSuccess) {
@@ -1557,9 +1604,9 @@ export default class ObsidianTeamsPlugin extends Plugin {
       }
       return true
     } catch (error) {
-      const message = this.describeHostedRequestError(error, 'Failed to link hosted account')
+      const message = this.describeHostedRequestError(error, 'Failed to verify hosted account code')
       new Notice(message)
-      console.error('[teams] Hosted account link failed:', error)
+      console.error('[teams] Hosted OTP verification failed:', error)
       return false
     }
   }
@@ -1568,6 +1615,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
     this.settings.hostedSessionToken = ''
     this.settings.hostedSessionExpiresAt = ''
     this.settings.hostedSubscriptionStatus = ''
+    this.settings.hostedOtpCode = ''
     await this.saveSettings()
     new Notice('Hosted account link cleared')
   }
@@ -1575,6 +1623,12 @@ export default class ObsidianTeamsPlugin extends Plugin {
   async openHostedCheckout(): Promise<void> {
     if (!this.isHostedMode()) {
       new Notice('Switch Service mode to Hosted service to open managed billing')
+      return
+    }
+
+    const knownStatus = this.settings.hostedSubscriptionStatus
+    if (knownStatus && this.isHostedSubscriptionManagedInPortal(knownStatus)) {
+      await this.openHostedBillingPortal()
       return
     }
 

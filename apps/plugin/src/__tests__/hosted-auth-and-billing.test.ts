@@ -1,7 +1,8 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import {
-  createHostedSession,
+  startHostedOtp,
+  verifyHostedOtp,
   createHostedCheckoutSession,
   createHostedPortalSession,
   getHostedAuthMe,
@@ -12,7 +13,32 @@ import {
 } from '../utils/auth.js'
 import { HOSTED_SESSION_HEADER, PROTOCOL_HEADER, PROTOCOL_V2 } from '@obsidian-teams/shared'
 
-test('createHostedSession posts account identity to hosted auth endpoint', async () => {
+test('startHostedOtp posts email identity to hosted auth OTP start endpoint', async () => {
+  const originalFetch = globalThis.fetch
+  const calls: Array<{ url: string; init?: RequestInit }> = []
+
+  globalThis.fetch = (async (url: string | URL | Request, init?: RequestInit) => {
+    calls.push({ url: String(url), init })
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    })
+  }) as typeof fetch
+
+  try {
+    const response = await startHostedOtp('https://teams.example.com', 'owner@example.com')
+    assert.equal(response.success, true)
+    assert.equal(calls.length, 1)
+    assert.equal(calls[0].url, 'https://teams.example.com/api/hosted/auth/otp/start')
+
+    const headers = calls[0].init?.headers as Record<string, string>
+    assert.equal(headers[PROTOCOL_HEADER], PROTOCOL_V2)
+  } finally {
+    globalThis.fetch = originalFetch
+  }
+})
+
+test('verifyHostedOtp posts OTP code and returns hosted session payload', async () => {
   const originalFetch = globalThis.fetch
   const calls: Array<{ url: string; init?: RequestInit }> = []
 
@@ -37,10 +63,15 @@ test('createHostedSession posts account identity to hosted auth endpoint', async
   }) as typeof fetch
 
   try {
-    const response = await createHostedSession('https://teams.example.com', 'owner@example.com', 'Owner')
+    const response = await verifyHostedOtp(
+      'https://teams.example.com',
+      'owner@example.com',
+      '123456',
+      'Owner'
+    )
     assert.equal(response.account.email, 'owner@example.com')
     assert.equal(calls.length, 1)
-    assert.equal(calls[0].url, 'https://teams.example.com/api/hosted/auth/session')
+    assert.equal(calls[0].url, 'https://teams.example.com/api/hosted/auth/otp/verify')
 
     const headers = calls[0].init?.headers as Record<string, string>
     assert.equal(headers[PROTOCOL_HEADER], PROTOCOL_V2)
@@ -143,7 +174,7 @@ test('previewInvite fetches invite metadata without consuming token', async () =
   }
 })
 
-test('silentHostedRelink refreshes hosted session from stored email', async () => {
+test('silentHostedRelink refreshes hosted billing snapshot for existing hosted session', async () => {
   const originalFetch = globalThis.fetch
 
   globalThis.fetch = (async () => {
@@ -154,9 +185,20 @@ test('silentHostedRelink refreshes hosted session from stored email', async () =
           email: 'owner@example.com',
           displayName: 'Owner',
           status: 'active',
+          expiresAt: '2026-04-01T00:00:00.000Z',
         },
-        sessionToken: 'session-token-2',
-        expiresAt: '2026-04-01T00:00:00.000Z',
+        billing: {
+          subscriptionStatus: 'active',
+          priceCents: 900,
+          storageCapBytes: 3221225472,
+          maxFileSizeBytes: 26214400,
+          currentPeriodEnd: null,
+          cancelAtPeriodEnd: false,
+        },
+        usage: {
+          ownedFolderCount: 0,
+          ownedStorageBytes: 0,
+        },
       }),
       { status: 200, headers: { 'Content-Type': 'application/json' } }
     )
@@ -167,8 +209,10 @@ test('silentHostedRelink refreshes hosted session from stored email', async () =
       deploymentMode: 'hosted-service' as const,
       hostedAccountEmail: 'owner@example.com',
       hostedAccountDisplayName: '',
-      hostedSessionToken: '',
-      hostedSessionExpiresAt: '',
+      hostedOtpCode: '',
+      hostedSessionToken: 'session-token-1',
+      hostedSessionExpiresAt: '2026-01-01T00:00:00.000Z',
+      hostedSubscriptionStatus: '',
       displayName: 'Owner',
       serverUrl: 'https://teams.example.com',
       folderTokens: {},
@@ -180,11 +224,34 @@ test('silentHostedRelink refreshes hosted session from stored email', async () =
   try {
     const relinked = await silentHostedRelink(pluginStub as any, { force: true })
     assert.equal(relinked, true)
-    assert.equal(pluginStub.settings.hostedSessionToken, 'session-token-2')
+    assert.equal(pluginStub.settings.hostedSessionToken, 'session-token-1')
     assert.equal(pluginStub.settings.hostedSessionExpiresAt, '2026-04-01T00:00:00.000Z')
+    assert.equal(pluginStub.settings.hostedSubscriptionStatus, 'active')
   } finally {
     globalThis.fetch = originalFetch
   }
+})
+
+test('silentHostedRelink returns false when hosted session token is missing', async () => {
+  const pluginStub = {
+    settings: {
+      deploymentMode: 'hosted-service' as const,
+      hostedAccountEmail: 'owner@example.com',
+      hostedAccountDisplayName: '',
+      hostedOtpCode: '',
+      hostedSessionToken: '',
+      hostedSessionExpiresAt: '',
+      hostedSubscriptionStatus: '',
+      displayName: 'Owner',
+      serverUrl: 'https://teams.example.com',
+      folderTokens: {},
+      folderRefreshTokens: {},
+    },
+    saveSettings: async () => {},
+  }
+
+  const relinked = await silentHostedRelink(pluginStub as any, { force: true })
+  assert.equal(relinked, false)
 })
 
 test('hosted billing helpers call checkout, portal, and account snapshot endpoints', async () => {

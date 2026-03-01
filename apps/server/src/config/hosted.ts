@@ -40,6 +40,22 @@ export function hostedStripeWebhookSecret(): string | null {
   return normalizeOptional(process.env.STRIPE_WEBHOOK_SECRET)
 }
 
+export function hostedSupabaseUrl(): string | null {
+  return normalizeOptional(process.env.SUPABASE_URL)
+}
+
+export function hostedSupabaseAnonKey(): string | null {
+  return normalizeOptional(process.env.SUPABASE_ANON_KEY)
+}
+
+export function hostedSupabaseServiceRoleKey(): string | null {
+  return normalizeOptional(process.env.SUPABASE_SERVICE_ROLE_KEY)
+}
+
+export function hostedSupabaseAuthKey(): string | null {
+  return hostedSupabaseServiceRoleKey() || hostedSupabaseAnonKey()
+}
+
 export function hostedBaseUrl(defaultValue = 'https://collaborativefolders.com'): string {
   return normalizeOptional(process.env.PUBLIC_HTTP_URL) || normalizeOptional(process.env.SERVER_URL) || defaultValue
 }
@@ -49,15 +65,23 @@ export function isHostedBillingConfigured(): boolean {
   return Boolean(hostedStripeSecretKey() && hostedStripeWebhookSecret())
 }
 
+export function isHostedAuthConfigured(): boolean {
+  if (!isHostedModeEnabled()) return false
+  return Boolean(hostedSupabaseUrl() && hostedSupabaseAuthKey())
+}
+
 export function readHostedConfig() {
   const hostedMode = isHostedModeEnabled()
   return {
     hostedMode,
     stripeSecretKey: hostedStripeSecretKey(),
     stripeWebhookSecret: hostedStripeWebhookSecret(),
+    supabaseUrl: hostedSupabaseUrl(),
+    supabaseAuthKeyPresent: Boolean(hostedSupabaseAuthKey()),
     defaultSeatPriceCents: hostedSeatPriceCents(),
     defaultStorageCapBytes: hostedStorageCapBytes(),
     defaultMaxFileSizeBytes: hostedMaxFileSizeBytes(),
+    authConfigured: isHostedAuthConfigured(),
     billingConfigured: isHostedBillingConfigured(),
   }
 }
