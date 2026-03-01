@@ -26,14 +26,14 @@ export class DashboardModal extends Modal {
   }
 
   onOpen() {
-    void this.render()
+    this.render()
   }
 
-  private async render() {
+  private render() {
     const { contentEl } = this
     contentEl.empty()
     contentEl.addClass('obsidian-teams-dashboard-modal')
-    contentEl.createEl('h2', { text: 'Shared Folders' })
+    contentEl.createEl('h2', { text: 'Shared folders' })
 
     const entries = this.plugin.getDashboardEntries()
     if (entries.length === 0) {
@@ -70,7 +70,7 @@ export class DashboardModal extends Modal {
       }
     })
 
-    const status = heading.createDiv({
+    heading.createDiv({
       cls: `obsidian-teams-dashboard-status is-${entry.status}`,
       text: statusLabel(entry.status),
     })
@@ -102,7 +102,7 @@ export class DashboardModal extends Modal {
             'Leave',
             async () => {
               await this.plugin.leaveSharedFolderById(entry.folderId)
-              await this.render()
+              this.render()
             },
             true
           ).open()

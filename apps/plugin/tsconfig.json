@@ -8,8 +8,10 @@
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
     "outDir": "./dist",
-    "rootDir": "./src",
     "baseUrl": ".",
+    "paths": {
+      "@obsidian-teams/shared": ["../../packages/shared/src/index.ts"]
+    },
     "lib": ["ES2018", "DOM"],
     "types": ["node"]
   },

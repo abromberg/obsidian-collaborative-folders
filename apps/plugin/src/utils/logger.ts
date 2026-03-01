@@ -6,7 +6,7 @@ export function setDebugLogging(enabled: boolean): void {
 
 export function debugLog(...args: unknown[]): void {
   if (!debugLoggingEnabled) return
-  console.log(...args)
+  console.debug(...args)
 }
 
 export function debugWarn(...args: unknown[]): void {

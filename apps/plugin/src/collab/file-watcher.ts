@@ -1,4 +1,4 @@
-import { Vault, TAbstractFile, TFile, TFolder } from 'obsidian'
+import { FileManager, Vault, TAbstractFile, TFile, TFolder } from 'obsidian'
 import {
   SHARED_CONFIG_FILENAME,
   CRDT_EXTENSIONS,
@@ -28,6 +28,7 @@ export class SharedFolderWatcher {
 
   constructor(
     private vault: Vault,
+    private fileManager: FileManager,
     private fileTree: FileTreeSync,
     private folderId: string,
     private sharedFolderPath: string,
@@ -56,20 +57,22 @@ export class SharedFolderWatcher {
   /** Start watching for local and remote changes, and scan existing files */
   start(): void {
     // Watch for remote file tree changes
-    this.fileTree.onRemoteChange(async ({ added, updated, deleted }) => {
-      for (const [path, entry] of added) {
-        await this.handleRemoteAdd(path, entry)
-      }
-      for (const [path, entry] of updated) {
-        await this.handleRemoteUpdate(path, entry)
-      }
-      for (const path of deleted) {
-        await this.handleRemoteDelete(path)
-      }
+    this.fileTree.onRemoteChange(({ added, updated, deleted }) => {
+      void (async () => {
+        for (const [path, entry] of added) {
+          await this.handleRemoteAdd(path, entry)
+        }
+        for (const [path, entry] of updated) {
+          await this.handleRemoteUpdate(path, entry)
+        }
+        for (const path of deleted) {
+          await this.handleRemoteDelete(path)
+        }
+      })()
     })
 
     // Scan existing local files into the file tree
-    this.scanLocalFolder()
+    void this.scanLocalFolder()
   }
 
   /** Scan all existing files in the shared folder and add them to the Yjs file tree */
@@ -189,7 +192,7 @@ export class SharedFolderWatcher {
 
     if (syncMode === 'blob' && file instanceof TFile) {
       // Upload blob content, then update file tree with contentHash
-      this.uploadAndTrack(file, entry)
+      void this.uploadAndTrack(file, entry)
     } else {
       this.fileTree.addOrUpdateFile(relativePath, entry)
       if (syncMode === 'crdt' && file instanceof TFile) {
@@ -222,7 +225,7 @@ export class SharedFolderWatcher {
 
     if (entry.syncMode === 'blob') {
       // Re-upload blob and update contentHash
-      this.uploadAndTrack(file, entry)
+      void this.uploadAndTrack(file, entry)
     } else if (entry.syncMode === 'crdt') {
       if (this.externalEditCallback) {
         // A CRDT file was modified on disk (possibly by another plugin or external editor).
@@ -333,7 +336,7 @@ export class SharedFolderWatcher {
     try {
       const file = this.vault.getAbstractFileByPath(fullPath)
       if (file) {
-        await this.vault.delete(file)
+        await this.fileManager.trashFile(file)
       }
     } finally {
       this.unsuppress(fullPath)
@@ -406,7 +409,7 @@ export class SharedFolderWatcher {
   }
 
   private async preserveConflictCopy(fullPath: string, content: ArrayBuffer): Promise<void> {
-    const conflictPath = await this.nextConflictPath(fullPath)
+    const conflictPath = this.nextConflictPath(fullPath)
     this.suppress(conflictPath)
     try {
       await this.vault.createBinary(conflictPath, content)
@@ -418,7 +421,7 @@ export class SharedFolderWatcher {
     }
   }
 
-  private async nextConflictPath(fullPath: string): Promise<string> {
+  private nextConflictPath(fullPath: string): string {
     const lastSlash = fullPath.lastIndexOf('/')
     const lastDot = fullPath.lastIndexOf('.')
     const hasExtension = lastDot > lastSlash
@@ -466,7 +469,7 @@ export class SharedFolderWatcher {
 
     const timer = setTimeout(() => {
       this.pendingAttachmentLocalization.delete(file.path)
-      this.attachmentLocalizationCallback?.(file).catch((err) => {
+      void this.attachmentLocalizationCallback?.(file).catch((err) => {
         console.error(`[teams] Attachment localization failed for ${file.path}:`, err)
       })
     }, 200)

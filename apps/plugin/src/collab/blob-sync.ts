@@ -18,7 +18,7 @@ interface BlobUploadErrorBody {
 }
 
 async function readUploadErrorDetail(response: {
-  json: () => Promise<any>
+  json: () => Promise<unknown>
   text: () => Promise<string>
 }): Promise<string> {
   const payload = await response
@@ -197,8 +197,8 @@ export async function uploadBlobWithRetry(
   for (let attempt = 0; attempt < maxRetries; attempt++) {
     try {
       return await uploadBlob(serverUrl, folderId, getAuthToken, keyManager, content)
-    } catch (err: any) {
-      lastError = err
+    } catch (err: unknown) {
+      lastError = err instanceof Error ? err : new Error(String(err))
       if (attempt < maxRetries - 1) {
         const delay = Math.min(1000 * Math.pow(2, attempt), 10000)
         await new Promise((resolve) => setTimeout(resolve, delay))

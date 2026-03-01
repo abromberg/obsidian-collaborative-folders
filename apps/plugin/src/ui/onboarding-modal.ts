@@ -25,7 +25,7 @@ export class OnboardingModal extends Modal {
     contentEl.empty()
     contentEl.addClass('obsidian-teams-onboarding-modal')
 
-    contentEl.createEl('h2', { text: 'Welcome to Collaborative Folders' })
+    contentEl.createEl('h2', { text: 'Welcome to collaborative folders' })
     contentEl.createEl('p', {
       cls: 'setting-item-description',
       text: 'Complete setup to start sharing and joining folders.',

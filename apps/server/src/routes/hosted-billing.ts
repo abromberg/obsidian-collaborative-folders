@@ -1,3 +1,4 @@
+/* eslint-disable import/no-nodejs-modules -- Server runtime intentionally depends on Node.js built-in modules. */
 import crypto from 'crypto'
 import { Router, type Request, type Response } from 'express'
 import type { HostedCheckoutSessionResponse, HostedPortalSessionResponse } from '@obsidian-teams/shared'
@@ -369,8 +370,8 @@ async function stripePost(
     stripeSecret: string
     idempotencyKey?: string
   }
-): Promise<{ status: number; payload: any }> {
-  const response = await fetch(`${STRIPE_API_BASE}${path}`, {
+): Promise<{ status: number; payload: unknown }> {
+  const response = await globalThis.fetch(`${STRIPE_API_BASE}${path}`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${options.stripeSecret}`,
@@ -382,6 +383,19 @@ async function stripePost(
 
   const payload = await response.json().catch(() => ({}))
   return { status: response.status, payload }
+}
+
+function readStripeErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null
+  const error = (payload as { error?: unknown }).error
+  if (!error || typeof error !== 'object') return null
+  const message = (error as { message?: unknown }).message
+  return typeof message === 'string' && message.trim() ? message : null
+}
+
+function readStripeSession(payload: unknown): StripeSessionResponse | null {
+  if (!payload || typeof payload !== 'object') return null
+  return payload as StripeSessionResponse
 }
 
 function parseStripeSignature(signatureHeader: string): { timestamp: number; signatures: string[] } | null {
@@ -446,10 +460,11 @@ function findAccountIdFromStripeData(db: ReturnType<typeof getDb>, object: Recor
   const clientReferenceId = typeof object.client_reference_id === 'string' ? object.client_reference_id : null
   if (clientReferenceId) return clientReferenceId
 
+  const objectKind = typeof object.object === 'string' ? object.object : ''
   const subscriptionId =
     typeof object.subscription === 'string'
       ? object.subscription
-      : typeof object.id === 'string' && String(object.object || '').includes('subscription')
+      : typeof object.id === 'string' && objectKind.includes('subscription')
         ? object.id
         : null
 
@@ -808,132 +823,154 @@ hostedBillingRouter.get('/return', (req: Request, res: Response) => {
 })
 
 /** POST /api/hosted/billing/checkout-session — create Stripe checkout session for account. */
+async function handleCheckoutSession(
+  req: Request<Record<string, never>, unknown, CheckoutBody>,
+  res: Response<HostedCheckoutSessionResponse | { error: string }>
+): Promise<void> {
+  const actor = resolveSessionActor(req, res)
+  if (!actor) return
+
+  const stripeSecret = requireStripeSecret(res)
+  if (!stripeSecret) return
+
+  const db = getDb()
+  const access = resolveBillingAccount(db, actor.accountId)
+  const accountProfile = db
+    .prepare(
+      `
+      SELECT email_norm
+      FROM hosted_accounts
+      WHERE id = ?
+      LIMIT 1
+    `
+    )
+    .get(actor.accountId) as AccountProfileRow | undefined
+  const checkoutCustomerEmail = access.stripe_customer_id ? undefined : accountProfile?.email_norm || undefined
+
+  const successUrl = req.body.successUrl?.trim() || buildBillingReturnUrl('success')
+  const cancelUrl = req.body.cancelUrl?.trim() || buildBillingReturnUrl('cancel')
+
+  const body = formBody({
+    mode: 'subscription',
+    success_url: successUrl,
+    cancel_url: cancelUrl,
+    client_reference_id: actor.accountId,
+    'metadata[account_id]': actor.accountId,
+    'line_items[0][quantity]': 1,
+    'line_items[0][price_data][currency]': 'usd',
+    'line_items[0][price_data][unit_amount]': hostedSeatPriceCents(),
+    'line_items[0][price_data][product_data][name]': 'Collaborative Folders Subscription',
+    'line_items[0][price_data][recurring][interval]': 'month',
+    customer: access.stripe_customer_id,
+    customer_email: checkoutCustomerEmail,
+  })
+
+  const idempotencyKey = crypto
+    .createHash('sha256')
+    .update(`checkout:${actor.accountId}`)
+    .digest('hex')
+
+  const stripe = await stripePost('/v1/checkout/sessions', body, {
+    stripeSecret,
+    idempotencyKey,
+  })
+
+  if (stripe.status < 200 || stripe.status >= 300) {
+    const message = readStripeErrorMessage(stripe.payload) || `Stripe checkout request failed (${stripe.status})`
+    res.status(502).json({ error: message })
+    return
+  }
+
+  const payload = readStripeSession(stripe.payload)
+  if (!payload?.id || !payload.url) {
+    res.status(502).json({ error: 'Stripe checkout response missing id/url' })
+    return
+  }
+
+  res.status(201).json({
+    checkoutSessionId: payload.id,
+    checkoutUrl: payload.url,
+  })
+}
+
 hostedBillingRouter.post(
   '/checkout-session',
-  async (
-    req: Request<any, any, CheckoutBody>,
+  (
+    req: Request<Record<string, never>, unknown, CheckoutBody>,
     res: Response<HostedCheckoutSessionResponse | { error: string }>
   ) => {
-    const actor = resolveSessionActor(req, res)
-    if (!actor) return
-
-    const stripeSecret = requireStripeSecret(res)
-    if (!stripeSecret) return
-
-    const db = getDb()
-    const access = resolveBillingAccount(db, actor.accountId)
-    const accountProfile = db
-      .prepare(
-        `
-        SELECT email_norm
-        FROM hosted_accounts
-        WHERE id = ?
-        LIMIT 1
-      `
-      )
-      .get(actor.accountId) as AccountProfileRow | undefined
-    const checkoutCustomerEmail = access.stripe_customer_id ? undefined : accountProfile?.email_norm || undefined
-
-    const successUrl = req.body.successUrl?.trim() || buildBillingReturnUrl('success')
-    const cancelUrl = req.body.cancelUrl?.trim() || buildBillingReturnUrl('cancel')
-
-    const body = formBody({
-      mode: 'subscription',
-      success_url: successUrl,
-      cancel_url: cancelUrl,
-      client_reference_id: actor.accountId,
-      'metadata[account_id]': actor.accountId,
-      'line_items[0][quantity]': 1,
-      'line_items[0][price_data][currency]': 'usd',
-      'line_items[0][price_data][unit_amount]': hostedSeatPriceCents(),
-      'line_items[0][price_data][product_data][name]': 'Collaborative Folders Subscription',
-      'line_items[0][price_data][recurring][interval]': 'month',
-      customer: access.stripe_customer_id,
-      customer_email: checkoutCustomerEmail,
-    })
-
-    const idempotencyKey = crypto
-      .createHash('sha256')
-      .update(`checkout:${actor.accountId}`)
-      .digest('hex')
-
-    const stripe = await stripePost('/v1/checkout/sessions', body, {
-      stripeSecret,
-      idempotencyKey,
-    })
-
-    if (stripe.status < 200 || stripe.status >= 300) {
-      const message =
-        typeof stripe.payload?.error?.message === 'string'
-          ? stripe.payload.error.message
-          : `Stripe checkout request failed (${stripe.status})`
-      res.status(502).json({ error: message })
-      return
-    }
-
-    const payload = stripe.payload as StripeSessionResponse
-    if (!payload.id || !payload.url) {
-      res.status(502).json({ error: 'Stripe checkout response missing id/url' })
-      return
-    }
-
-    res.status(201).json({
-      checkoutSessionId: payload.id,
-      checkoutUrl: payload.url,
+    void handleCheckoutSession(req, res).catch((error: unknown) => {
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'Failed to create hosted checkout session'
+      res.status(500).json({ error: message })
     })
   }
 )
 
 /** POST /api/hosted/billing/portal-session — create Stripe billing portal session for account. */
+async function handlePortalSession(
+  req: Request<Record<string, never>, unknown, PortalBody>,
+  res: Response<HostedPortalSessionResponse | { error: string }>
+): Promise<void> {
+  const actor = resolveSessionActor(req, res)
+  if (!actor) return
+
+  const stripeSecret = requireStripeSecret(res)
+  if (!stripeSecret) return
+
+  const db = getDb()
+  const access = resolveBillingAccount(db, actor.accountId)
+
+  if (!access.stripe_customer_id) {
+    res.status(409).json({ error: 'Account has no Stripe customer yet. Complete checkout first.' })
+    return
+  }
+
+  const returnUrl = req.body.returnUrl?.trim() || buildBillingReturnUrl('return')
+  const body = formBody({
+    customer: access.stripe_customer_id,
+    return_url: returnUrl,
+  })
+
+  const idempotencyKey = crypto
+    .createHash('sha256')
+    .update(`portal:${actor.accountId}:${Date.now()}`)
+    .digest('hex')
+
+  const stripe = await stripePost('/v1/billing_portal/sessions', body, {
+    stripeSecret,
+    idempotencyKey,
+  })
+
+  if (stripe.status < 200 || stripe.status >= 300) {
+    const message = readStripeErrorMessage(stripe.payload) || `Stripe portal request failed (${stripe.status})`
+    res.status(502).json({ error: message })
+    return
+  }
+
+  const portalPayload = stripe.payload as { url?: unknown }
+  const portalUrl = typeof portalPayload.url === 'string' ? portalPayload.url : null
+  if (!portalUrl) {
+    res.status(502).json({ error: 'Stripe portal response missing url' })
+    return
+  }
+
+  res.status(201).json({ portalUrl })
+}
+
 hostedBillingRouter.post(
   '/portal-session',
-  async (req: Request<any, any, PortalBody>, res: Response<HostedPortalSessionResponse | { error: string }>) => {
-    const actor = resolveSessionActor(req, res)
-    if (!actor) return
-
-    const stripeSecret = requireStripeSecret(res)
-    if (!stripeSecret) return
-
-    const db = getDb()
-    const access = resolveBillingAccount(db, actor.accountId)
-
-    if (!access.stripe_customer_id) {
-      res.status(409).json({ error: 'Account has no Stripe customer yet. Complete checkout first.' })
-      return
-    }
-
-    const returnUrl = req.body.returnUrl?.trim() || buildBillingReturnUrl('return')
-    const body = formBody({
-      customer: access.stripe_customer_id,
-      return_url: returnUrl,
+  (
+    req: Request<Record<string, never>, unknown, PortalBody>,
+    res: Response<HostedPortalSessionResponse | { error: string }>
+  ) => {
+    void handlePortalSession(req, res).catch((error: unknown) => {
+      const message = error instanceof Error && error.message
+        ? error.message
+        : 'Failed to create hosted billing portal session'
+      res.status(500).json({ error: message })
     })
-
-    const idempotencyKey = crypto
-      .createHash('sha256')
-      .update(`portal:${actor.accountId}:${Date.now()}`)
-      .digest('hex')
-
-    const stripe = await stripePost('/v1/billing_portal/sessions', body, {
-      stripeSecret,
-      idempotencyKey,
-    })
-
-    if (stripe.status < 200 || stripe.status >= 300) {
-      const message =
-        typeof stripe.payload?.error?.message === 'string'
-          ? stripe.payload.error.message
-          : `Stripe portal request failed (${stripe.status})`
-      res.status(502).json({ error: message })
-      return
-    }
-
-    const portalUrl = typeof stripe.payload?.url === 'string' ? stripe.payload.url : null
-    if (!portalUrl) {
-      res.status(502).json({ error: 'Stripe portal response missing url' })
-      return
-    }
-
-    res.status(201).json({ portalUrl })
   }
 )
 

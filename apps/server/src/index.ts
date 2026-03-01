@@ -1,3 +1,4 @@
+/* eslint-disable import/no-nodejs-modules -- Server runtime intentionally depends on Node.js built-in modules. */
 import express from 'express'
 import cors from 'cors'
 import type { NextFunction, Request, Response } from 'express'
@@ -48,7 +49,6 @@ const ALWAYS_ALLOWED_ORIGINS = new Set([
   'null',
 ])
 const PROTOCOL_GATE_ENABLED = true
-const PLUGIN_INSTALL_URL = 'https://obsidian.md/plugins?id=collaborative-folders'
 const BRAT_PLUGIN_URL = 'https://obsidian.md/plugins?id=brat'
 const GITHUB_SOURCE_URL = 'https://github.com/abromberg/obsidian-collaborative-folders'
 const OBSIDIAN_RELEASES_PR_URL = 'https://github.com/obsidianmd/obsidian-releases/pull/10628'
@@ -1096,7 +1096,7 @@ app.get('/', (_req, res) => {
           </article>
           <article class="tile">
             <h2 class="tile-title">Agent-friendly</h2>
-            <p>As long as Obsidian is open, updates you or an agent make will sync in realtime — so invite Claude Code right in.</p>
+            <p>As long as Obsidian is open, updates you or an agent make will sync in realtime - so invite Claude Code right in.</p>
           </article>
           <article class="tile">
             <h2 class="tile-title">Images &amp; Attachments</h2>
@@ -1966,7 +1966,9 @@ httpServer.on('upgrade', (request, socket, head) => {
       return
     }
 
-    const protocol = resolveUpgradeProtocolVersion(request as any)
+    const protocol = resolveUpgradeProtocolVersion(
+      request as Request | { url?: string; headers: Record<string, string | string[] | undefined> }
+    )
     if (protocol !== PROTOCOL_V2) {
       socket.write('HTTP/1.1 426 Upgrade Required\r\nConnection: close\r\n\r\n')
       socket.destroy()
@@ -1976,8 +1978,8 @@ httpServer.on('upgrade', (request, socket, head) => {
     wsServer.handleUpgrade(request, socket, head, (ws) => {
       wsServer.emit('connection', ws, request)
     })
-  } catch (error: any) {
-    if (error?.message) {
+  } catch (error: unknown) {
+    if (error instanceof Error && error.message) {
       console.error('[ws:upgrade]', redactValue(error.message))
     }
     socket.destroy()
@@ -1985,5 +1987,5 @@ httpServer.on('upgrade', (request, socket, head) => {
 })
 
 httpServer.listen(PORT, '0.0.0.0', () => {
-  console.log(`[server] HTTP + encrypted relay WebSocket server running on port ${PORT}`)
+  console.debug(`[server] HTTP + encrypted relay WebSocket server running on port ${PORT}`)
 })

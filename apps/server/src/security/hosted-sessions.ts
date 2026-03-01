@@ -1,3 +1,4 @@
+/* eslint-disable import/no-nodejs-modules -- Server runtime intentionally depends on Node.js built-in modules. */
 import crypto from 'crypto'
 import type Database from 'better-sqlite3'
 import type { Request } from 'express'

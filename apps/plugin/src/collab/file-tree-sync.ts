@@ -146,7 +146,7 @@ export class FileTreeSync {
   destroy(): void {
     this.wsProvider.disconnect()
     this.wsProvider.destroy()
-    this.persistence.destroy()
+    void this.persistence.destroy()
     this.ydoc.destroy()
   }
 }

@@ -1,3 +1,4 @@
+/* eslint-disable import/no-nodejs-modules -- Server runtime intentionally depends on Node.js built-in modules. */
 import { Router, type Response } from 'express'
 import crypto from 'crypto'
 import fs from 'fs'

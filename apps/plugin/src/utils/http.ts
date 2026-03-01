@@ -21,7 +21,7 @@ export interface HttpResponseLike {
   ok: boolean
   status: number
   headers: HttpHeaders
-  json(): Promise<any>
+  json(): Promise<unknown>
   text(): Promise<string>
   arrayBuffer(): Promise<ArrayBuffer>
 }
@@ -34,7 +34,6 @@ interface HttpRequestInit {
 
 declare global {
   // Set by plugin runtime so modules that do not import `obsidian` can still prefer requestUrl.
-  // eslint-disable-next-line no-var
   var __obsidianRequestUrl: ObsidianRequestUrlFn | undefined
 }
 
@@ -52,7 +51,7 @@ class HeaderMap implements HttpHeaders {
   }
 }
 
-function jsonParse(text: string): any {
+function jsonParse(text: string): unknown {
   if (!text.trim()) {
     throw new Error('Response body is empty')
   }
@@ -82,25 +81,29 @@ function makeResponseFromRequestUrl(payload: {
     ok,
     status,
     headers,
-    async text() {
-      return textValue
+    text() {
+      return Promise.resolve(textValue)
     },
-    async arrayBuffer() {
-      return asArrayBuffer(arrayBufferValue)
+    arrayBuffer() {
+      return Promise.resolve(asArrayBuffer(arrayBufferValue))
     },
-    async json() {
+    json() {
       if (!jsonResolved) {
         // Obsidian's requestUrl response may expose `json` via a getter that throws
         // for non-JSON bodies (for example, encrypted blob bytes). Keep this lazy so
         // binary/text callers can still use `arrayBuffer()`/`text()` safely.
-        jsonCached = payload.json
+        try {
+          jsonCached = payload.json
+        } catch (error) {
+          return Promise.reject(error)
+        }
         jsonResolved = true
       }
 
       if (typeof jsonCached !== 'undefined' && jsonCached !== null) {
-        return jsonCached
+        return Promise.resolve(jsonCached)
       }
-      return jsonParse(textValue)
+      return Promise.resolve(jsonParse(textValue))
     },
   }
 }

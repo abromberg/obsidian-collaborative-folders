@@ -132,12 +132,14 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
       .addText((text) => {
         text.setValue(this.plugin.settings.clientId)
         text.inputEl.setAttr('readonly', 'true')
-        text.inputEl.style.opacity = '0.7'
+        text.inputEl.addClass('obsidian-teams-readonly-input')
       })
   }
 
   private renderHostedSettings(containerEl: HTMLElement): void {
-    containerEl.createEl('h3', { text: 'Hosted service (collaborativefolders.com)' })
+    new Setting(containerEl)
+      .setName('Hosted service (collaborativefolders.com)')
+      .setHeading()
     containerEl.createEl('p', {
       cls: 'setting-item-description',
       text:
@@ -226,7 +228,7 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
   }
 
   private renderSelfHostedSettings(containerEl: HTMLElement): void {
-    containerEl.createEl('h3', { text: 'Self-deployment' })
+    new Setting(containerEl).setName('Self-deployment').setHeading()
     containerEl.createEl('p', {
       cls: 'setting-item-description',
       text:
@@ -293,7 +295,7 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
     const { containerEl } = this
     containerEl.empty()
 
-    containerEl.createEl('h2', { text: 'Collaborative Folders' })
+    new Setting(containerEl).setName('Collaborative folders').setHeading()
     this.renderPendingInviteBanner(containerEl)
 
     new Setting(containerEl)

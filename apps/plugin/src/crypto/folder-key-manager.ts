@@ -24,13 +24,19 @@ type CurrentEnvelopeLookupResponse =
       pending: 'no_active_epoch' | 'missing_envelope'
     }
 
+function readErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null
+  const value = (payload as { error?: unknown }).error
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
 function assertOk(response: HttpResponseLike, message: string): Promise<void> {
   if (response.ok) return Promise.resolve()
   return response
     .json()
-    .catch(() => ({}))
+    .catch(() => null)
     .then((body) => {
-      const detail = (body && typeof body.error === 'string' ? body.error : '') || `HTTP ${response.status}`
+      const detail = readErrorMessage(body) ?? `HTTP ${response.status}`
       throw new Error(`${message}: ${detail}`)
     })
 }

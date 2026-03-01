@@ -1,3 +1,4 @@
+/* eslint-disable import/no-nodejs-modules -- Server runtime intentionally depends on Node.js built-in modules. */
 import jwt, { type JwtPayload, type SignOptions } from 'jsonwebtoken'
 import crypto from 'crypto'
 import { type AccessTokenPayload } from '@obsidian-teams/shared'

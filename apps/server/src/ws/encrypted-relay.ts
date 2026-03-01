@@ -1,3 +1,4 @@
+/* eslint-disable import/no-nodejs-modules -- Server runtime intentionally depends on Node.js built-in modules. */
 import type { IncomingMessage } from 'http'
 import { WebSocketServer, WebSocket } from 'ws'
 import {
@@ -172,7 +173,14 @@ function ensureAuthorizedConnection(request: IncomingMessage):
 
 function parseClientMessage(raw: WebSocket.RawData): RelayClientMessage | null {
   try {
-    const text = typeof raw === 'string' ? raw : raw.toString('utf8')
+    const text = (() => {
+      if (typeof raw === 'string') return raw
+      if (Buffer.isBuffer(raw)) return raw.toString('utf8')
+      if (raw instanceof ArrayBuffer) return Buffer.from(raw).toString('utf8')
+      if (Array.isArray(raw)) return Buffer.concat(raw).toString('utf8')
+      return ''
+    })()
+    if (!text) return null
     const parsed = JSON.parse(text) as RelayClientMessage
     if (!parsed || typeof parsed !== 'object') return null
     if (parsed.protocol !== PROTOCOL_V2) return null

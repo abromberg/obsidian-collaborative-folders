@@ -17,9 +17,13 @@ export function createOfflinePersistence(
 ): IndexeddbPersistence {
   const persistence = new IndexeddbPersistence(roomName, ydoc)
 
-  persistence.whenSynced.then(() => {
-    debugLog(`[offline] Loaded local state for ${roomName}`)
-  })
+  void persistence.whenSynced
+    .then(() => {
+      debugLog(`[offline] Loaded local state for ${roomName}`)
+    })
+    .catch(() => {
+      debugLog(`[offline] Failed to load local state for ${roomName}`)
+    })
 
   return persistence
 }

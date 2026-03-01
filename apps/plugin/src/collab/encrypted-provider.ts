@@ -59,13 +59,26 @@ function typedTextEncoder(value: string): Uint8Array {
 
 function safeParseMessage(raw: string): EncryptedRelayMessage | null {
   try {
-    const message = JSON.parse(raw) as EncryptedRelayMessage
+    const message = JSON.parse(raw) as unknown
     if (!message || typeof message !== 'object') return null
-    if ((message as any).protocol && (message as any).protocol !== PROTOCOL_V2) return null
-    return message
+    const protocol = (message as { protocol?: unknown }).protocol
+    if (typeof protocol === 'string' && protocol !== PROTOCOL_V2) return null
+    return message as EncryptedRelayMessage
   } catch {
     return null
   }
+}
+
+function readErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null
+  const value = (payload as { error?: unknown }).error
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+function readWsTicket(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null
+  const ticket = (payload as { ticket?: unknown }).ticket
+  return typeof ticket === 'string' && ticket.length > 0 ? ticket : null
 }
 
 export class EncryptedProvider {
@@ -102,11 +115,27 @@ export class EncryptedProvider {
   }
 
   on<E extends keyof EventMap>(event: E, callback: EventMap[E]): void {
-    this.listeners[event].add(callback as any)
+    if (event === 'status') {
+      this.listeners.status.add(callback as EventMap['status'])
+      return
+    }
+    if (event === 'authenticationFailed') {
+      this.listeners.authenticationFailed.add(callback as EventMap['authenticationFailed'])
+      return
+    }
+    this.listeners.synced.add(callback as EventMap['synced'])
   }
 
   off<E extends keyof EventMap>(event: E, callback: EventMap[E]): void {
-    this.listeners[event].delete(callback as any)
+    if (event === 'status') {
+      this.listeners.status.delete(callback as EventMap['status'])
+      return
+    }
+    if (event === 'authenticationFailed') {
+      this.listeners.authenticationFailed.delete(callback as EventMap['authenticationFailed'])
+      return
+    }
+    this.listeners.synced.delete(callback as EventMap['synced'])
   }
 
   disconnect(): void {
@@ -128,8 +157,20 @@ export class EncryptedProvider {
   }
 
   private emit<E extends keyof EventMap>(event: E, payload: Parameters<EventMap[E]>[0]): void {
-    for (const cb of this.listeners[event]) {
-      cb(payload as any)
+    if (event === 'status') {
+      for (const cb of this.listeners.status) {
+        cb(payload as StatusPayload)
+      }
+      return
+    }
+    if (event === 'authenticationFailed') {
+      for (const cb of this.listeners.authenticationFailed) {
+        cb(payload as AuthFailedPayload)
+      }
+      return
+    }
+    for (const cb of this.listeners.synced) {
+      cb(payload as SyncedPayload)
     }
   }
 
@@ -231,17 +272,17 @@ export class EncryptedProvider {
     )
 
     if (!response.ok) {
-      const body = await response.json().catch(() => ({}))
-      const message =
-        (body && typeof body.error === 'string' && body.error) || `HTTP ${response.status}`
+      const body = await response.json().catch(() => null)
+      const message = readErrorMessage(body) ?? `HTTP ${response.status}`
       throw new Error(`Failed to issue WebSocket ticket: ${message}`)
     }
 
     const payload = (await response.json()) as WsTicketResponse
-    if (!payload.ticket) {
+    const ticket = readWsTicket(payload)
+    if (!ticket) {
       throw new Error('Failed to issue WebSocket ticket: missing ticket')
     }
-    return payload.ticket
+    return ticket
   }
 
   private async connect(): Promise<void> {
@@ -261,8 +302,11 @@ export class EncryptedProvider {
 
     try {
       await this.options.keyManager.getActiveContentKey(this.options.folderId)
-    } catch (error: any) {
-      this.failAuth(error?.message || 'Failed to initialize folder key')
+    } catch (error: unknown) {
+      const reason = error instanceof Error && error.message
+        ? error.message
+        : 'Failed to initialize folder key'
+      this.failAuth(reason)
       this.updateStatus(STATUS_DISCONNECTED)
       this.reconnectAttempt += 1
       this.scheduleReconnect()
@@ -272,8 +316,11 @@ export class EncryptedProvider {
     let ticket: string
     try {
       ticket = await this.issueWsTicket(token)
-    } catch (error: any) {
-      this.failAuth(error?.message || 'Failed to issue WebSocket ticket')
+    } catch (error: unknown) {
+      const reason = error instanceof Error && error.message
+        ? error.message
+        : 'Failed to issue WebSocket ticket'
+      this.failAuth(reason)
       this.updateStatus(STATUS_DISCONNECTED)
       this.reconnectAttempt += 1
       this.scheduleReconnect()

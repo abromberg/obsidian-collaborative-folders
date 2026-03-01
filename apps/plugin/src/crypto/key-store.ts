@@ -92,7 +92,7 @@ export class KeyStore {
     return pair
   }
 
-  async getClientPublicKeyJwk(clientId: string): Promise<JsonWebKey | null> {
+  getClientPublicKeyJwk(clientId: string): JsonWebKey | null {
     const raw = this.get(this.clientKey(clientId))
     if (!raw) return null
     const parsed = JSON.parse(raw) as StoredClientKeyPair

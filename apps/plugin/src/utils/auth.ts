@@ -17,7 +17,7 @@ import type {
   HostedPortalSessionResponse,
 } from '@obsidian-teams/shared'
 import { PROTOCOL_HEADER, PROTOCOL_V2, HOSTED_SESSION_HEADER } from '@obsidian-teams/shared'
-import { httpRequest } from './http'
+import { httpRequest, type HttpResponseLike } from './http'
 
 const DEFAULT_REFRESH_WINDOW_MS = 5 * 60 * 1000
 const refreshInFlightByFolder = new Map<string, Promise<RefreshResponse>>()
@@ -33,6 +33,21 @@ interface RawFolderMemberRecord {
 
 interface RawFolderMembersResponse {
   members: RawFolderMemberRecord[]
+}
+
+function readErrorMessage(payload: unknown): string | null {
+  if (!payload || typeof payload !== 'object') return null
+  const value = (payload as { error?: unknown }).error
+  return typeof value === 'string' && value.length > 0 ? value : null
+}
+
+async function readJson<T>(response: HttpResponseLike): Promise<T> {
+  return (await response.json()) as T
+}
+
+async function readHttpErrorMessage(response: HttpResponseLike): Promise<string> {
+  const payload = await response.json().catch(() => ({ error: 'Unknown error' } as const))
+  return readErrorMessage(payload) ?? `HTTP ${response.status}`
 }
 
 /** Store an access token for a folder */
@@ -146,11 +161,10 @@ export async function refreshAccessToken(
   })
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `HTTP ${response.status}`)
+    throw new Error(await readHttpErrorMessage(response))
   }
 
-  const data = (await response.json()) as RefreshResponse
+  const data = await readJson<RefreshResponse>(response)
   if (!data.accessToken || !data.refreshToken) {
     throw new Error('Refresh response missing accessToken or refreshToken')
   }
@@ -255,11 +269,10 @@ export async function createInvite(
   })
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `HTTP ${response.status}`)
+    throw new Error(await readHttpErrorMessage(response))
   }
 
-  return response.json()
+  return readJson<InviteResponse>(response)
 }
 
 async function getFolderBearerToken(plugin: ObsidianTeamsPlugin, folderId: string): Promise<string> {
@@ -287,11 +300,10 @@ export async function listFolderMembers(
   )
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `HTTP ${response.status}`)
+    throw new Error(await readHttpErrorMessage(response))
   }
 
-  const payload = (await response.json()) as RawFolderMembersResponse
+  const payload = await readJson<RawFolderMembersResponse>(response)
   return payload.members.map((member) => ({
     clientId: member.client_id,
     displayName: member.display_name,
@@ -319,11 +331,10 @@ export async function listFolderInvites(
   )
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `HTTP ${response.status}`)
+    throw new Error(await readHttpErrorMessage(response))
   }
 
-  const payload = (await response.json()) as { invites: FolderInviteRecord[] }
+  const payload = await readJson<{ invites: FolderInviteRecord[] }>(response)
   return payload.invites
 }
 
@@ -346,8 +357,7 @@ export async function revokeFolderInvite(
   )
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `HTTP ${response.status}`)
+    throw new Error(await readHttpErrorMessage(response))
   }
 }
 
@@ -373,11 +383,10 @@ export async function removeFolderMember(
   )
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `HTTP ${response.status}`)
+    throw new Error(await readHttpErrorMessage(response))
   }
 
-  return (await response.json()) as RemoveMemberResponse
+  return readJson<RemoveMemberResponse>(response)
 }
 
 /** Redeem an invite token to join a shared folder */
@@ -405,11 +414,10 @@ export async function redeemInvite(
   })
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `HTTP ${response.status}`)
+    throw new Error(await readHttpErrorMessage(response))
   }
 
-  return response.json()
+  return readJson<RedeemResponse>(response)
 }
 
 /** Preview an invite token without consuming it. */
@@ -432,11 +440,10 @@ export async function previewInvite(
   )
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `HTTP ${response.status}`)
+    throw new Error(await readHttpErrorMessage(response))
   }
 
-  return (await response.json()) as InvitePreviewResponse
+  return readJson<InvitePreviewResponse>(response)
 }
 
 function sessionExpiresSoon(expiresAt: string): boolean {
@@ -523,11 +530,10 @@ export async function createHostedSession(
   })
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `HTTP ${response.status}`)
+    throw new Error(await readHttpErrorMessage(response))
   }
 
-  return (await response.json()) as HostedSessionResponse
+  return readJson<HostedSessionResponse>(response)
 }
 
 export async function createHostedCheckoutSession(
@@ -555,11 +561,10 @@ export async function createHostedCheckoutSession(
   })
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `HTTP ${response.status}`)
+    throw new Error(await readHttpErrorMessage(response))
   }
 
-  return (await response.json()) as HostedCheckoutSessionResponse
+  return readJson<HostedCheckoutSessionResponse>(response)
 }
 
 export async function createHostedPortalSession(
@@ -584,11 +589,10 @@ export async function createHostedPortalSession(
   })
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `HTTP ${response.status}`)
+    throw new Error(await readHttpErrorMessage(response))
   }
 
-  return (await response.json()) as HostedPortalSessionResponse
+  return readJson<HostedPortalSessionResponse>(response)
 }
 
 export async function getHostedAuthMe(
@@ -603,9 +607,8 @@ export async function getHostedAuthMe(
   })
 
   if (!response.ok) {
-    const error = await response.json().catch(() => ({ error: 'Unknown error' }))
-    throw new Error(error.error || `HTTP ${response.status}`)
+    throw new Error(await readHttpErrorMessage(response))
   }
 
-  return (await response.json()) as HostedAuthMeResponse
+  return readJson<HostedAuthMeResponse>(response)
 }

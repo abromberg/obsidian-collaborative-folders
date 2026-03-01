@@ -186,7 +186,7 @@ export class ShareFolderModal extends Modal {
     }
   }
 
-  private async handleRemoveMember(folderId: string, member: FolderMemberRecord): Promise<void> {
+  private handleRemoveMember(folderId: string, member: FolderMemberRecord): void {
     if (this.actionInFlight) return
     if (member.role === 'owner') return
 
@@ -214,7 +214,7 @@ export class ShareFolderModal extends Modal {
     ).open()
   }
 
-  private async handleRevokeInvite(folderId: string, invite: FolderInviteRecord): Promise<void> {
+  private handleRevokeInvite(folderId: string, invite: FolderInviteRecord): void {
     if (this.actionInFlight) return
     if (invite.status !== 'active') return
 
@@ -340,7 +340,6 @@ export class ShareFolderModal extends Modal {
         urlSetting.addText((text) => {
           text.setValue(this.latestInviteUrl || '')
           text.inputEl.setAttr('readonly', 'true')
-          text.inputEl.style.width = '100%'
         })
         urlSetting.addButton((btn) => {
           btn.setButtonText('Copy link').setCta().onClick(async () => {
@@ -360,7 +359,6 @@ export class ShareFolderModal extends Modal {
       tokenSetting.addText((text) => {
         text.setValue(this.latestInviteToken || '')
         text.inputEl.setAttr('readonly', 'true')
-        text.inputEl.style.width = '100%'
       })
       tokenSetting.addButton((btn) => {
         btn.setButtonText('Copy').onClick(async () => {

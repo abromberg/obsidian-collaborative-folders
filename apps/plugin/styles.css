@@ -201,6 +201,10 @@
   margin: 0;
 }
 
+.obsidian-teams-readonly-input {
+  opacity: 0.7;
+}
+
 .obsidian-teams-onboarding-modal h2 {
   margin-bottom: 0.35rem;
 }

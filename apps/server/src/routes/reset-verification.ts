@@ -1,3 +1,4 @@
+/* eslint-disable import/no-nodejs-modules -- Server runtime intentionally depends on Node.js built-in modules. */
 import { Router, type Request, type Response } from 'express'
 import fs from 'fs'
 import { getDb } from '../db/schema.js'

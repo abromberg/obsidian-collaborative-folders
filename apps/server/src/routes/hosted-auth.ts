@@ -1,3 +1,4 @@
+/* eslint-disable import/no-nodejs-modules -- Server runtime intentionally depends on Node.js built-in modules. */
 import { Router, type Request, type Response } from 'express'
 import crypto from 'crypto'
 import type { HostedAuthMeResponse, HostedSessionResponse } from '@obsidian-teams/shared'
@@ -70,7 +71,12 @@ function resolveSessionActor(req: Request, res: Response) {
 }
 
 /** POST /api/hosted/auth/session — create or refresh hosted account session by email identity. */
-hostedAuthRouter.post('/session', (req: Request<any, any, CreateHostedSessionBody>, res: Response<HostedSessionResponse | { error: string }>) => {
+hostedAuthRouter.post(
+  '/session',
+  (
+    req: Request<Record<string, never>, unknown, CreateHostedSessionBody>,
+    res: Response<HostedSessionResponse | { error: string }>
+  ) => {
   const email = normalizeHostedEmail(req.body.email || '')
   if (!email) {
     res.status(400).json({ error: 'Valid email is required' })
@@ -140,7 +146,8 @@ hostedAuthRouter.post('/session', (req: Request<any, any, CreateHostedSessionBod
     sessionToken: issued.sessionToken,
     expiresAt: issued.expiresAt,
   })
-})
+  }
+)
 
 /** GET /api/hosted/auth/me — resolve hosted session identity and account billing snapshot. */
 hostedAuthRouter.get('/me', (req: Request, res: Response<HostedAuthMeResponse | { error: string }>) => {

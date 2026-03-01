@@ -135,7 +135,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
     this.updateStatusBar('offline')
 
     // Ribbon icon
-    this.addRibbonIcon('users', 'Collaborative Folders', () => {
+    this.addRibbonIcon('users', 'Collaborative folders', () => {
       new DashboardModal(this.app, this).open()
     })
 
@@ -587,7 +587,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
     }
   }
 
-  async onunload() {
+  onunload() {
     this.clearPendingBind()
     this.destroyAllBackgroundMirrors()
     this.stopSharedFolderBadgeObserver()
@@ -835,7 +835,11 @@ export default class ObsidianTeamsPlugin extends Plugin {
       })
 
       const watcher = new SharedFolderWatcher(
-        this.app.vault, fileTree, folderId, sf.path,
+        this.app.vault,
+        this.app.fileManager,
+        fileTree,
+        folderId,
+        sf.path,
         this.settings.serverUrl,
         () => getOrRefreshToken(this, folderId),
         this.keyManager
@@ -1486,7 +1490,12 @@ export default class ObsidianTeamsPlugin extends Plugin {
   }
 
   private describeHostedRequestError(error: unknown, fallback: string): string {
-    const message = error instanceof Error ? error.message : String(error || '')
+    const message =
+      typeof error === 'string'
+        ? error
+        : error instanceof Error
+          ? error.message
+          : ''
     const lower = message.toLowerCase()
 
     if (
@@ -1730,14 +1739,14 @@ export default class ObsidianTeamsPlugin extends Plugin {
     badgeClass: string
   ) {
     if (!host) return
-    const hostEl = host as HTMLElement
-    const existingBadge = hostEl.querySelector(`.${badgeClass}`) as HTMLElement | null
+    if (!(host instanceof HTMLElement)) return
+    const existingBadge = host.querySelector<HTMLElement>(`.${badgeClass}`)
     if (!isShared) {
       existingBadge?.remove()
       return
     }
     if (existingBadge) return
-    hostEl.appendChild(this.createSharedBadge(badgeClass))
+    host.appendChild(this.createSharedBadge(badgeClass))
   }
 
   private renderSharedFolderBadges() {
