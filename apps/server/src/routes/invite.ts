@@ -259,7 +259,7 @@ function readForwarded(req: Request, key: 'x-forwarded-proto' | 'x-forwarded-hos
 }
 
 function shouldUseForwardedHeaders(req: Request): boolean {
-  const trustProxy = req.app.get('trust proxy')
+  const trustProxy: unknown = req.app.get('trust proxy')
   if (typeof trustProxy === 'boolean') return trustProxy
   if (typeof trustProxy === 'number') return trustProxy > 0
   return Boolean(trustProxy)
@@ -1045,7 +1045,8 @@ inviteRouter.post('/', inviteCreateRateLimiter, (req: Request, res: Response) =>
     })
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : 'Internal server error'
-    console.error('[invite] Error creating invite:', redactValue({ message, body: req.body }))
+    const requestBody: unknown = req.body
+    console.error('[invite] Error creating invite:', redactValue({ message, body: requestBody }))
     res.status(500).json({ error: message })
   }
 })
@@ -1292,7 +1293,8 @@ inviteRouter.post('/redeem', inviteRedeemRateLimiter, (req: Request, res: Respon
       return
     }
     const message = err instanceof Error ? err.message : 'Internal server error'
-    console.error('[invite] Error redeeming invite:', redactValue({ message, body: req.body }))
+    const requestBody: unknown = req.body
+    console.error('[invite] Error redeeming invite:', redactValue({ message, body: requestBody }))
     res.status(500).json({ error: message })
   }
 })

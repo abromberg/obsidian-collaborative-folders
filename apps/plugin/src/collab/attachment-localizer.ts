@@ -213,9 +213,9 @@ export class AttachmentLocalizer {
       common += 1
     }
 
-    const upward = new Array(fromSegments.length - common).fill('..')
+    const upward = new Array<string>(fromSegments.length - common).fill('..')
     const downward = toSegments.slice(common)
-    const relative = [...upward, ...downward].join('/')
+    const relative = upward.concat(downward).join('/')
     return relative || targetPath
   }
 

@@ -62,7 +62,7 @@ export class OnboardingModal extends Modal {
           .setDesc('Used for hosted account linking and billing')
           .addText((text) => {
             text
-              .setPlaceholder('name@example.com')
+              .setPlaceholder('Email address')
               .setValue(this.hostedEmail)
               .onChange((value) => {
                 this.hostedEmail = value.trim().toLowerCase()

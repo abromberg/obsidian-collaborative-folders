@@ -115,7 +115,7 @@ async function postSupabaseAuth(
     },
     body: JSON.stringify(payload),
   })
-  const parsed = await response.json().catch(() => ({}))
+  const parsed: unknown = await response.json().catch(() => null)
   return {
     status: response.status,
     payload: parsed,

@@ -108,7 +108,7 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
 
     const banner = containerEl.createDiv({ cls: 'obsidian-teams-pending-invite-banner' })
     banner.createEl('p', {
-      text: 'You have a pending folder invite. Complete setup below, then click "Join now".',
+      text: 'You have a pending folder invite. Complete setup below, then click "join now".',
     })
 
     new Setting(banner)
@@ -165,7 +165,7 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
       .setDesc('Used for one-time-code verification before opening checkout or billing portal.')
       .addText((text) =>
         text
-          .setPlaceholder('name@example.com')
+          .setPlaceholder('Email address')
           .setValue(this.plugin.settings.hostedAccountEmail)
           .onChange(async (value) => {
             const previousEmail = this.plugin.settings.hostedAccountEmail.trim().toLowerCase()
@@ -277,7 +277,7 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
     containerEl.createEl('p', {
       cls: 'setting-item-description',
       text:
-        'Connect directly to your own server. Hosted account linking and Stripe billing controls are hidden in this mode.',
+        'Connect directly to your own server. Hosted account linking and billing controls are hidden in this mode.',
     })
 
     new Setting(containerEl)
@@ -340,7 +340,7 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
     const { containerEl } = this
     containerEl.empty()
 
-    new Setting(containerEl).setName('Collaborative folders').setHeading()
+    new Setting(containerEl).setName('Overview').setHeading()
     this.renderPendingInviteBanner(containerEl)
 
     new Setting(containerEl)

@@ -4,6 +4,17 @@ import { colorFromClientId, type AwarenessUserState } from '@obsidian-teams/shar
 /** Re-broadcast interval (ms). Must be well under the 30s awareness timeout. */
 const AWARENESS_REFRESH_MS = 15_000
 
+function readRemoteUser(state: unknown): { name: string; color: string } | null {
+  if (!state || typeof state !== 'object') return null
+  const user = (state as { user?: unknown }).user
+  if (!user || typeof user !== 'object') return null
+
+  const name = (user as { name?: unknown }).name
+  const color = (user as { color?: unknown }).color
+  if (typeof name !== 'string' || typeof color !== 'string') return null
+  return { name, color }
+}
+
 /**
  * Initialize the local awareness state with user identity.
  * This broadcasts the user's name and cursor color to all peers.
@@ -47,11 +58,12 @@ export function getRemoteUsers(awareness: Awareness): Array<{
   const users: Array<{ clientId: number; name: string; color: string }> = []
 
   awareness.getStates().forEach((state, clientId) => {
-    if (clientId !== awareness.clientID && state.user) {
+    const user = readRemoteUser(state)
+    if (clientId !== awareness.clientID && user) {
       users.push({
         clientId,
-        name: state.user.name,
-        color: state.user.color,
+        name: user.name,
+        color: user.color,
       })
     }
   })

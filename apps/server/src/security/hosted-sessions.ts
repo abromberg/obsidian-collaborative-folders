@@ -36,9 +36,9 @@ function hashHostedSessionToken(token: string): string {
   return crypto.createHash('sha256').update(token).digest('hex')
 }
 
-export function extractHostedSessionToken(req: Pick<Request, 'header'>): string | null {
+export function extractHostedSessionToken(req: Request): string | null {
   const raw = req.header(HOSTED_SESSION_HEADER)
-  const token = (Array.isArray(raw) ? raw[0] : raw)?.trim()
+  const token = raw?.trim()
   if (!token) return null
   return token
 }

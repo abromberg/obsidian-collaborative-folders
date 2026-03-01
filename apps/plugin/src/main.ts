@@ -901,7 +901,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
         const session = this.yjsManager.getSession(docRoomName(folderId, relativePath))
         if (!session) return
 
-        const yjsContent = session.ytext.toString()
+        const yjsContent = this.readSessionContent(session)
         if (yjsContent !== diskContent) {
           session.ydoc.transact(() => {
             session.ytext.delete(0, session.ytext.length)
@@ -1023,7 +1023,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
     }
 
     const fullPath = `${mirror.sharedFolderPath}/${mirror.relativePath}`
-    const yjsContent = mirror.session.ytext.toString()
+    const yjsContent = this.readSessionContent(mirror.session)
 
     await folderSession.watcher.runWithSuppressedPath(fullPath, async () => {
       const abstract = this.app.vault.getAbstractFileByPath(fullPath)
@@ -1217,12 +1217,17 @@ export default class ObsidianTeamsPlugin extends Plugin {
     }
   }
 
+  private readSessionContent(session: DocSession): string {
+    // eslint-disable-next-line @typescript-eslint/no-base-to-string -- Y.Text#toString() returns document text.
+    return session.ytext.toString()
+  }
+
   /** Bind a synced Yjs session to the active editor */
   private bindSession(session: DocSession, relativePath: string, file: TFile) {
     this.activeSession = session
 
     const view = this.app.workspace.getActiveViewOfType(MarkdownView)
-    const yjsContent = session.ytext.toString()
+    const yjsContent = this.readSessionContent(session)
     void this.reconcileDiskWithYjs(file, yjsContent)
 
     if (view?.file?.path === file.path) {
@@ -1432,7 +1437,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
       const now = Date.now()
       if (now - this.lastNetworkNoticeAt >= this.networkNoticeCooldownMs) {
         this.lastNetworkNoticeAt = now
-        new Notice('Teams cannot reach the server right now (network/CORS). Retrying automatically.')
+        new Notice('Teams cannot reach the server right now (network/cors). Retrying automatically.')
       }
       return
     }
@@ -1534,7 +1539,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
 
   async startHostedAccountOtp(): Promise<boolean> {
     if (!this.isHostedMode()) {
-      new Notice('Switch Service mode to Hosted service to link a hosted account')
+      new Notice('Switch service mode to hosted service to link a hosted account')
       return false
     }
 
@@ -1566,7 +1571,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
     options: { silentSuccess?: boolean } = {}
   ): Promise<boolean> {
     if (!this.isHostedMode()) {
-      new Notice('Switch Service mode to Hosted service to link a hosted account')
+      new Notice('Switch service mode to hosted service to link a hosted account')
       return false
     }
 
@@ -1622,7 +1627,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
 
   async openHostedCheckout(): Promise<void> {
     if (!this.isHostedMode()) {
-      new Notice('Switch Service mode to Hosted service to open managed billing')
+      new Notice('Switch service mode to hosted service to open managed billing')
       return
     }
 
@@ -1654,7 +1659,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
 
   async openHostedBillingPortal(): Promise<void> {
     if (!this.isHostedMode()) {
-      new Notice('Switch Service mode to Hosted service to open managed billing')
+      new Notice('Switch service mode to hosted service to open managed billing')
       return
     }
 
@@ -1826,7 +1831,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
     const tabHeaders = document.querySelectorAll('.workspace-tab-header')
     tabHeaders.forEach((tabEl) => {
       const path = this.getElementPath(tabEl)
-      const title = tabEl.querySelector('.workspace-tab-header-inner-title') as HTMLElement | null
+      const title = tabEl.querySelector<HTMLElement>('.workspace-tab-header-inner-title')
       this.updateSharedBadge(title, Boolean(path && this.isSharedPath(path)), 'obsidian-teams-shared-badge-tab')
     })
   }

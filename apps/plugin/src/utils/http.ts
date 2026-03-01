@@ -95,7 +95,8 @@ function makeResponseFromRequestUrl(payload: {
         try {
           jsonCached = payload.json
         } catch (error) {
-          return Promise.reject(error)
+          const reason = error instanceof Error ? error : new Error('Failed to parse JSON response')
+          return Promise.reject(reason)
         }
         jsonResolved = true
       }

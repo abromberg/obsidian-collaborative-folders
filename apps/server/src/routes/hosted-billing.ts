@@ -391,7 +391,7 @@ async function stripePost(
     body,
   })
 
-  const payload = await response.json().catch(() => ({}))
+  const payload: unknown = await response.json().catch(() => null)
   return { status: response.status, payload }
 }
 
@@ -409,7 +409,7 @@ async function stripeGet(
     },
   })
 
-  const payload = await response.json().catch(() => ({}))
+  const payload: unknown = await response.json().catch(() => null)
   return { status: response.status, payload }
 }
 
