@@ -71,6 +71,10 @@ const HOSTED_DEFAULT_MAX_FILE_SIZE = formatSizeLimit(HOSTED_DEFAULT_MAX_FILE_SIZ
 const SERVER_FILE_PATH = fileURLToPath(import.meta.url)
 const SERVER_DIR_PATH = path.dirname(SERVER_FILE_PATH)
 const DEMO_VIDEO_URL = '/media/collab_demo.mp4'
+const DEFAULT_PUBLIC_HTTP_URL = 'https://collaborativefolders.com'
+const SOCIAL_OG_IMAGE_PATH = '/media/collaborativefolders_og.png'
+const SOCIAL_OG_IMAGE_WIDTH = '1200'
+const SOCIAL_OG_IMAGE_HEIGHT = '630'
 
 function formatUsdFromCents(cents: number): string {
   const dollars = Math.max(0, cents) / 100
@@ -122,6 +126,73 @@ function resolveTrustProxySetting(): boolean | number | string | string[] {
   if (csv.length > 1) return csv
 
   return raw
+}
+
+function trimTrailingSlash(value: string): string {
+  return value.replace(/\/+$/, '')
+}
+
+function readForwarded(req: Request, key: 'x-forwarded-proto' | 'x-forwarded-host'): string | null {
+  const value = req.headers[key]
+  if (!value) return null
+  if (Array.isArray(value)) return value[0] ?? null
+  return value.split(',')[0]?.trim() || null
+}
+
+function shouldUseForwardedHeaders(req: Request): boolean {
+  const trustProxy: unknown = req.app.get('trust proxy')
+  if (typeof trustProxy === 'boolean') return trustProxy
+  if (typeof trustProxy === 'number') return trustProxy > 0
+  return Boolean(trustProxy)
+}
+
+function resolvePublicHttpBaseUrl(req: Request): string {
+  const configured = process.env.PUBLIC_HTTP_URL || process.env.SERVER_URL
+  if (configured) return trimTrailingSlash(configured)
+
+  const trustForwarded = shouldUseForwardedHeaders(req)
+  const proto = (trustForwarded ? readForwarded(req, 'x-forwarded-proto') : null) || req.protocol || 'http'
+  const host = (trustForwarded ? readForwarded(req, 'x-forwarded-host') : null) || req.get('host')
+  if (!host) return DEFAULT_PUBLIC_HTTP_URL
+  return `${proto}://${host}`
+}
+
+function escapeHtmlAttribute(value: string): string {
+  return value
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#39;')
+}
+
+function looksLikeHtml(value: string): boolean {
+  return /^\s*<!doctype html/i.test(value) || /^\s*<html/i.test(value)
+}
+
+function injectSocialImageMetaTags(html: string, req: Request): string {
+  if (!looksLikeHtml(html)) return html
+  if (/property=["']og:image["']/i.test(html) || /name=["']twitter:image["']/i.test(html)) return html
+
+  const baseUrl = resolvePublicHttpBaseUrl(req)
+  const ogImageUrl = `${baseUrl}${SOCIAL_OG_IMAGE_PATH}`
+  const escapedOgImageUrl = escapeHtmlAttribute(ogImageUrl)
+
+  const socialMeta = `
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="Obsidian Collaborative Folders">
+    <meta property="og:image" content="${escapedOgImageUrl}">
+    <meta property="og:image:width" content="${SOCIAL_OG_IMAGE_WIDTH}">
+    <meta property="og:image:height" content="${SOCIAL_OG_IMAGE_HEIGHT}">
+    <meta property="og:image:type" content="image/png">
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:image" content="${escapedOgImageUrl}">`
+
+  if (/<head\b[^>]*>/i.test(html)) {
+    return html.replace(/<head\b([^>]*)>/i, `<head$1>${socialMeta}`)
+  }
+
+  return html.replace(/<html\b([^>]*)>/i, `<html$1><head>${socialMeta}</head>`)
 }
 
 function requireV2HttpProtocol(req: Request, res: Response, next: NextFunction): void {
@@ -478,6 +549,25 @@ if (HOSTED_MODE) {
 }
 
 app.use(express.json())
+app.use((req: Request, res: Response, next: NextFunction) => {
+  const originalSend = res.send.bind(res)
+
+  res.send = ((body: unknown): Response => {
+    const contentType = String(res.getHeader('Content-Type') || '')
+    const shouldAttemptHtmlMetaInjection = typeof body === 'string' || Buffer.isBuffer(body)
+    if (shouldAttemptHtmlMetaInjection) {
+      const htmlBody = typeof body === 'string' ? body : body.toString('utf8')
+      if (contentType.includes('text/html') || looksLikeHtml(htmlBody)) {
+        const updatedHtml = injectSocialImageMetaTags(htmlBody, req)
+        return originalSend(updatedHtml)
+      }
+    }
+
+    return originalSend(body as never)
+  }) as typeof res.send
+
+  next()
+})
 app.use(
   '/media',
   express.static(path.resolve(SERVER_DIR_PATH, '../media'), {

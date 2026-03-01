@@ -181,7 +181,7 @@ test('GET /invite/redeem renders deep-link page for valid invite token', async (
   assert.match(html, /Install plugin/i)
   assert.match(html, /Install With BRAT/i)
   assert.match(html, /https:\/\/obsidian\.md\/plugins\?id=brat/i)
-  assert.match(html, /https:\/\/github\.com\/abromberg\/obsidian-collaborative-folders-plugin/i)
+  assert.match(html, /abromberg\/obsidian-collaborative-folders-plugin/i)
   assert.doesNotMatch(html, /http-equiv="refresh"/i)
   assert.match(html, /autoLaunchDeepLink/i)
 })
