@@ -1,0 +1,38 @@
+node_modules/
+dist/
+*.js
+!esbuild.config.mjs
+*.js.map
+
+# Server data
+data/
+
+# Obsidian plugin output
+apps/plugin/main.js
+apps/plugin/main.js.map
+release/
+
+# Environment
+.env
+.env.local
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Turbo
+.turbo/
+
+# pnpm
+.pnpm-debug.log
+
+# docs
+docs/
+todos/
+CLAUDE.md

@@ -1,0 +1,24 @@
+services:
+  - type: web
+    name: obsidian-teams-server
+    runtime: docker
+    dockerfilePath: ./apps/server/Dockerfile
+    dockerContext: .
+    plan: starter
+    autoDeploy: true
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: JWT_SECRET
+        generateValue: true
+      - key: TRUST_PROXY
+        value: "1"
+      - key: DB_PATH
+        value: /var/data/obsidian-teams.sqlite
+      - key: BLOB_DIR
+        value: /var/data/blobs
+    disk:
+      name: obsidian-teams-data
+      mountPath: /var/data
+      sizeGB: 5

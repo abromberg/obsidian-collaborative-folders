@@ -1,0 +1,117 @@
+name: Mirror Plugin Repo
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - ".gitignore"
+      - "LICENSE"
+      - "README.md"
+      - "README.plugin.md"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+      - "turbo.json"
+      - "manifest.json"
+      - "versions.json"
+      - "scripts/prepare-plugin-release.mjs"
+      - ".github/workflows/release.yml"
+      - "apps/plugin/**"
+      - "packages/shared/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mirror-plugin-repo
+  cancel-in-progress: true
+
+jobs:
+  mirror:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out monorepo
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Build mirror stage
+        shell: bash
+        run: |
+          set -euo pipefail
+          STAGE_DIR="$(mktemp -d)"
+          echo "STAGE_DIR=$STAGE_DIR" >> "$GITHUB_ENV"
+
+          MIRROR_PATHS=(
+            .gitignore
+            LICENSE
+            README.md
+            package.json
+            pnpm-lock.yaml
+            pnpm-workspace.yaml
+            turbo.json
+            manifest.json
+            versions.json
+            scripts/prepare-plugin-release.mjs
+            .github/workflows/release.yml
+            apps/plugin
+            packages/shared
+          )
+
+          git archive --format=tar HEAD "${MIRROR_PATHS[@]}" | tar -xf - -C "$STAGE_DIR"
+
+          if [ -f README.plugin.md ]; then
+            cp README.plugin.md "$STAGE_DIR/README.md"
+          fi
+
+      - name: Sync to plugin repo
+        env:
+          TARGET_REPO: ${{ github.repository_owner }}/obsidian-collaborative-folders-plugin
+          TARGET_BRANCH: main
+          PAT: ${{ secrets.PLUGIN_MIRROR_PAT }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ -z "${PAT:-}" ]; then
+            echo "::notice::PLUGIN_MIRROR_PAT is not set; skipping mirror sync."
+            exit 0
+          fi
+
+          WORKDIR="$(mktemp -d)"
+          TARGET_DIR="$WORKDIR/target"
+          VERSIONS_BACKUP="$WORKDIR/versions.previous.json"
+          git clone "https://x-access-token:${PAT}@github.com/${TARGET_REPO}.git" "$TARGET_DIR"
+
+          if [ -f "$TARGET_DIR/versions.json" ]; then
+            cp "$TARGET_DIR/versions.json" "$VERSIONS_BACKUP"
+          fi
+
+          rsync -a --delete --exclude='.git/' "$STAGE_DIR"/ "$TARGET_DIR"/
+
+          if [ -f "$VERSIONS_BACKUP" ]; then
+            cp "$VERSIONS_BACKUP" "$TARGET_DIR/versions.json"
+          fi
+
+          cd "$TARGET_DIR"
+
+          node scripts/prepare-plugin-release.mjs
+          git config user.name "monorepo-mirror-bot"
+          git config user.email "monorepo-mirror-bot@users.noreply.github.com"
+
+          printf '%s\n' "$GITHUB_SHA" > SYNC_SOURCE_COMMIT
+
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No mirrored changes to push."
+            exit 0
+          fi
+
+          git commit -m "chore: mirror from ${GITHUB_REPOSITORY}@${GITHUB_SHA}"
+          git push origin "HEAD:${TARGET_BRANCH}"

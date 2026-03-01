@@ -1,0 +1,26 @@
+{
+  "name": "obsidian-teams",
+  "private": true,
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "typecheck": "turbo typecheck",
+    "clean": "turbo clean",
+    "plugin:build": "pnpm --filter @obsidian-teams/plugin build",
+    "plugin:prepare-submission": "node scripts/prepare-plugin-release.mjs",
+    "plugin:prepare-release": "pnpm plugin:build && pnpm plugin:prepare-submission"
+  },
+  "devDependencies": {
+    "turbo": "^2.4.0",
+    "typescript": "^5.7.0"
+  },
+  "packageManager": "pnpm@10.11.0",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "better-sqlite3",
+      "esbuild",
+      "leveldown",
+      "sqlite3"
+    ]
+  }
+}

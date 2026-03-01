@@ -1,0 +1,156 @@
+name: Release Obsidian Plugin
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - "apps/plugin/manifest.json"
+      - "apps/plugin/**"
+      - "packages/shared/**"
+      - "manifest.json"
+      - "versions.json"
+      - "scripts/prepare-plugin-release.mjs"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      - "pnpm-workspace.yaml"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: "Force a release even if plugin manifest version did not change"
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: plugin-release-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: ${{ github.repository == 'abromberg/obsidian-collaborative-folders-plugin' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10.11.0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Resolve release metadata
+        id: release_meta
+        env:
+          FORCE_RELEASE: ${{ github.event_name == 'workflow_dispatch' && inputs.force || 'false' }}
+        run: |
+          set -euo pipefail
+          CURRENT_VERSION="$(node -e "const fs=require('node:fs');const manifest=JSON.parse(fs.readFileSync('apps/plugin/manifest.json','utf8'));process.stdout.write(manifest.version || '');")"
+          if [ -z "$CURRENT_VERSION" ]; then
+            echo "apps/plugin/manifest.json has no version"
+            exit 1
+          fi
+          echo "version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+
+          BASE_SHA=""
+          if [ -n "${{ github.event.before }}" ] && git cat-file -e "${{ github.event.before }}^{commit}" 2>/dev/null; then
+            BASE_SHA="${{ github.event.before }}"
+          elif git rev-parse HEAD^ >/dev/null 2>&1; then
+            BASE_SHA="$(git rev-parse HEAD^)"
+          fi
+
+          PREVIOUS_VERSION=""
+          MANIFEST_CHANGED="false"
+          if [ -n "$BASE_SHA" ]; then
+            if ! git diff --quiet "$BASE_SHA" HEAD -- apps/plugin/manifest.json; then
+              MANIFEST_CHANGED="true"
+            fi
+            if git show "$BASE_SHA:apps/plugin/manifest.json" > /tmp/previous-plugin-manifest.json 2>/dev/null; then
+              PREVIOUS_VERSION="$(node -e "const fs=require('node:fs');const manifest=JSON.parse(fs.readFileSync('/tmp/previous-plugin-manifest.json','utf8'));process.stdout.write(manifest.version || '');")"
+            fi
+          fi
+
+          SHOULD_RELEASE="false"
+          if [ "$FORCE_RELEASE" = "true" ]; then
+            SHOULD_RELEASE="true"
+          elif [ "$MANIFEST_CHANGED" = "true" ] && [ "$CURRENT_VERSION" != "$PREVIOUS_VERSION" ]; then
+            SHOULD_RELEASE="true"
+          fi
+
+          echo "manifest_changed=$MANIFEST_CHANGED" >> "$GITHUB_OUTPUT"
+          echo "previous_version=$PREVIOUS_VERSION" >> "$GITHUB_OUTPUT"
+          echo "should_release=$SHOULD_RELEASE" >> "$GITHUB_OUTPUT"
+
+      - name: Skip when no release is needed
+        if: ${{ steps.release_meta.outputs.should_release != 'true' }}
+        run: |
+          echo "No plugin version bump detected and force=false."
+          echo "Current: ${{ steps.release_meta.outputs.version }}"
+          echo "Previous: ${{ steps.release_meta.outputs.previous_version }}"
+          exit 0
+
+      - name: Check release tag availability
+        id: tag_check
+        run: |
+          set -euo pipefail
+          git fetch --tags origin
+          VERSION="${{ steps.release_meta.outputs.version }}"
+          if git ls-remote --exit-code --tags origin "refs/tags/${VERSION}" >/dev/null 2>&1; then
+            echo "Tag ${VERSION} already exists on origin."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+
+      - name: Build shared package
+        if: ${{ steps.tag_check.outputs.publish == 'true' }}
+        run: pnpm --filter @obsidian-teams/shared build
+
+      - name: Build and prepare release artifacts
+        if: ${{ steps.tag_check.outputs.publish == 'true' }}
+        run: pnpm plugin:prepare-release
+
+      - name: Validate release artifacts
+        if: ${{ steps.tag_check.outputs.publish == 'true' }}
+        run: |
+          test -f release/obsidian-plugin/main.js
+          test -f release/obsidian-plugin/manifest.json
+          test -f release/obsidian-plugin/styles.css
+
+      - name: Create and push release tag
+        if: ${{ steps.tag_check.outputs.publish == 'true' }}
+        run: |
+          set -euo pipefail
+          VERSION="${{ steps.release_meta.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag "$VERSION"
+          git push origin "refs/tags/${VERSION}"
+
+      - name: Publish GitHub release
+        if: ${{ steps.tag_check.outputs.publish == 'true' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.release_meta.outputs.version }}
+          name: ${{ steps.release_meta.outputs.version }}
+          files: |
+            release/obsidian-plugin/main.js
+            release/obsidian-plugin/manifest.json
+            release/obsidian-plugin/styles.css
+          fail_on_unmatched_files: true
+          generate_release_notes: true

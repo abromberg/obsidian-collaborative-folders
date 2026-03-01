@@ -1,0 +1,308 @@
+/* Collaborative Folders - Collaborative Editing Styles */
+
+/* Remote cursor name label — override y-codemirror.next base theme (serif/.75em) */
+.cm-editor .cm-ySelectionInfo {
+  font-family: var(--font-interface);
+  font-size: var(--font-smallest);
+  font-style: normal;
+  font-weight: normal;
+  padding: 2px 6px;
+  border-radius: 3px;
+  color: white;
+  top: -1.4em;
+  left: -1px;
+  pointer-events: none;
+}
+
+/* Remote cursor caret */
+.cm-ySelectionCaret {
+  position: relative;
+  border-left: 2px solid;
+  border-right: none;
+  margin-left: -1px;
+  margin-right: -1px;
+}
+
+/* Invisible wider hover target around the thin cursor caret */
+.cm-ySelectionCaret::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -8px;
+  right: -8px;
+}
+
+/* Remote selection highlight */
+.cm-ySelection {
+  opacity: 0.3;
+}
+
+/* Status bar */
+.obsidian-teams-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: inherit;
+  cursor: pointer;
+}
+
+.obsidian-teams-status:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.obsidian-teams-status-label {
+  font-weight: 500;
+}
+
+.obsidian-teams-status-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  color: var(--text-muted);
+}
+
+.obsidian-teams-status-icon svg {
+  width: 14px;
+  height: 14px;
+}
+
+.obsidian-teams-status-icon.is-healthy {
+  color: var(--text-success, var(--text-normal));
+}
+
+.obsidian-teams-status-icon.is-unhealthy {
+  color: var(--text-error, var(--text-normal));
+}
+
+/* Presence dot */
+.obsidian-teams-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+
+/* Shared indicator badges */
+.obsidian-teams-shared-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 0.35em;
+  opacity: 0.75;
+  color: var(--text-muted);
+  pointer-events: none;
+  vertical-align: middle;
+}
+
+.obsidian-teams-shared-badge svg {
+  width: 0.85em;
+  height: 0.85em;
+}
+
+.workspace-tab-header-inner-title .obsidian-teams-shared-badge {
+  margin-left: 0.3em;
+  opacity: 0.65;
+}
+
+.view-header-title .obsidian-teams-shared-badge,
+.inline-title .obsidian-teams-shared-badge {
+  margin-left: 0.45em;
+}
+
+/* Manage shared folder modal */
+.obsidian-teams-manage-modal h2 {
+  margin-bottom: 0.35rem;
+}
+
+.obsidian-teams-manage-modal h3 {
+  margin-top: 1.2rem;
+  margin-bottom: 0.45rem;
+}
+
+.obsidian-teams-manage-copy {
+  margin-top: 0;
+  margin-bottom: 0.65rem;
+}
+
+.obsidian-teams-manage-divider {
+  margin: 1rem 0;
+  border: 0;
+  border-top: 1px solid var(--background-modifier-border);
+}
+
+.obsidian-teams-manage-modal .setting-item {
+  padding-top: 0.55rem;
+  padding-bottom: 0.55rem;
+}
+
+.obsidian-teams-manage-modal .setting-item-control button.mod-cta {
+  min-width: 9rem;
+}
+
+.obsidian-teams-manage-row .setting-item-name {
+  font-weight: 600;
+}
+
+.obsidian-teams-invite-ready {
+  margin-top: 0.85rem;
+  margin-bottom: 0.35rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--background-modifier-border);
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 10px;
+  background: var(--background-secondary);
+}
+
+.obsidian-teams-invite-ready-title {
+  font-size: var(--font-ui-medium);
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.obsidian-teams-invite-ready-help {
+  margin: 0.45rem 0 0.25rem;
+}
+
+.obsidian-teams-token-row .setting-item-control {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap: 0.5rem;
+}
+
+.obsidian-teams-token-row .setting-item-control input {
+  flex: 1;
+  font-family: var(--font-monospace);
+}
+
+.obsidian-teams-token-disclosure {
+  margin-top: 0.65rem;
+}
+
+.obsidian-teams-token-disclosure summary {
+  cursor: pointer;
+  font-weight: 600;
+}
+
+.obsidian-teams-pending-invite-banner {
+  margin: 0.75rem 0 1rem;
+  padding: 0.75rem;
+  border-radius: 10px;
+  border: 1px solid var(--background-modifier-border);
+  border-left: 3px solid var(--interactive-accent);
+  background: var(--background-secondary);
+}
+
+.obsidian-teams-pending-invite-banner p {
+  margin: 0;
+}
+
+.obsidian-teams-readonly-input {
+  opacity: 0.7;
+}
+
+.obsidian-teams-onboarding-modal h2 {
+  margin-bottom: 0.35rem;
+}
+
+.obsidian-teams-onboarding-pending {
+  margin: 0.5rem 0 0.9rem;
+  padding: 0.6rem 0.7rem;
+  border-radius: 8px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-secondary);
+}
+
+.obsidian-teams-join-error {
+  color: var(--text-error, var(--text-normal));
+}
+
+.obsidian-teams-confirm-modal h3 {
+  margin-bottom: 0.45rem;
+}
+
+.obsidian-teams-confirm-modal p {
+  margin-top: 0;
+  white-space: pre-wrap;
+}
+
+.obsidian-teams-dashboard-modal h2 {
+  margin-bottom: 0.6rem;
+}
+
+.obsidian-teams-dashboard-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.7rem;
+}
+
+.obsidian-teams-dashboard-row {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 10px;
+  padding: 0.7rem 0.8rem;
+  background: var(--background-secondary);
+}
+
+.obsidian-teams-dashboard-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.8rem;
+}
+
+.obsidian-teams-dashboard-folder-link {
+  border: 0;
+  background: transparent;
+  color: var(--text-normal);
+  font-weight: 700;
+  font-size: var(--font-ui-medium);
+  padding: 0;
+  cursor: pointer;
+  text-align: left;
+}
+
+.obsidian-teams-dashboard-folder-link:hover {
+  text-decoration: underline;
+}
+
+.obsidian-teams-dashboard-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  font-size: var(--font-ui-smaller);
+  padding: 0.22rem 0.55rem;
+  border: 1px solid transparent;
+}
+
+.obsidian-teams-dashboard-status.is-connected {
+  background: color-mix(in srgb, var(--text-success, #3a9148) 18%, transparent);
+  color: var(--text-success, #2d7a38);
+}
+
+.obsidian-teams-dashboard-status.is-offline {
+  background: color-mix(in srgb, var(--text-muted) 18%, transparent);
+  color: var(--text-muted);
+}
+
+.obsidian-teams-dashboard-status.is-auth-expired {
+  background: color-mix(in srgb, var(--text-error, #b84747) 18%, transparent);
+  color: var(--text-error, #b84747);
+}
+
+.obsidian-teams-dashboard-meta {
+  margin: 0.38rem 0 0.42rem;
+  color: var(--text-muted);
+}
+
+.obsidian-teams-dashboard-actions .setting-item {
+  border-top: 0;
+  padding: 0;
+}
+
+.obsidian-teams-dashboard-footer {
+  margin-top: 0.9rem;
+}

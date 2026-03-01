@@ -1,0 +1,19 @@
+{
+  "compilerOptions": {
+    "target": "ES2018",
+    "module": "ESNext",
+    "moduleResolution": "bundler",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "forceConsistentCasingInFileNames": true,
+    "outDir": "./dist",
+    "baseUrl": ".",
+    "paths": {
+      "@obsidian-teams/shared": ["../../packages/shared/src/index.ts"]
+    },
+    "lib": ["ES2018", "DOM"],
+    "types": ["node"]
+  },
+  "include": ["src/**/*.ts"]
+}
