@@ -274,7 +274,7 @@ function renderBillingReturnPage(status: BillingReturnStatus): string {
         <p>${escapeHtml(content.body)}</p>
         <div class="actions">
           <a class="button primary" href="${escapedDeepLink}" id="open-obsidian">Open Obsidian</a>
-          <a class="button secondary" href="/pricing">Back to pricing</a>
+          <a class="button secondary" href="/">Back to home</a>
         </div>
       </div>
     </div>
