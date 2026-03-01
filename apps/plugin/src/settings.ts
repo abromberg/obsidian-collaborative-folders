@@ -223,7 +223,7 @@ export class ObsidianTeamsSettingTab extends PluginSettingTab {
         : hasResolvedSubscriptionStatus
           ? `Hosted account session is active. Subscription status: ${subscriptionStatus}.`
           : 'Hosted account session is active. Checking subscription status...'
-      : 'No hosted session yet. Click Subscribe to begin; account session is created automatically.'
+      : 'No hosted session yet. Verify your email above to get started.'
     containerEl.createEl('p', {
       cls: 'setting-item-description',
       text: statusMessage,

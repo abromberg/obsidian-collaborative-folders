@@ -26,10 +26,9 @@ The valiant Obsidian plugin reviewing team is facing an onslaught of submissions
 2. Toggle BRAT "on" in the community plugins list.
 3. Open BRAT settings and choose `Add beta plugin`.
 4. Enter this repository URL: `https://github.com/abromberg/obsidian-collaborative-folders` and hit `Add`
-5. Open `Collaborative Folders` plugin settings and:
-   - set `Display name`: your name (others will see this)
-   - _either_ follow the Server Deployment section below and put your deployment URL in `Server URL`
-   - _or_ leave `Server URL` set to `https://collaborativefolders.com` and sign up for a hosted account
+5. On first launch the plugin opens an onboarding modal — enter your display name and choose a service mode:
+   - **Hosted service** (recommended): enter your email, then verify it with a one-time code in plugin settings and subscribe
+   - **Self-deployment**: follow the Server Deployment section below and enter your deployment URL
 
 ## (Optional) Server Deployment
 

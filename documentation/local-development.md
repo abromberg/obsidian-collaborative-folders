@@ -39,6 +39,7 @@ mkdir -p "<your-vault>/.obsidian/plugins/collaborative-folders"
 cp apps/plugin/main.js apps/plugin/manifest.json apps/plugin/styles.css "<your-vault>/.obsidian/plugins/collaborative-folders/"
 ```
 
-6. In Obsidian, enable the plugin and set:
-- `Server URL`: `http://localhost:1234`
-- `Display name`: your collaborator name
+6. In Obsidian, enable the plugin. On first launch the onboarding modal will appear:
+- Set your display name
+- Choose `Self-deployment` as the service mode
+- Enter `http://localhost:1234` as the server URL
