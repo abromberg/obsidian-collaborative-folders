@@ -1598,7 +1598,7 @@ app.get('/pricing', (_req, res) => {
         </dialog>
 
         <p class="meta">
-          Limits shown above reflect current hosted defaults as of ${LEGAL_LAST_UPDATED}. Terms may change. See
+          Terms may change. See
           <a href="/privacy">Privacy Policy</a>
           and
           <a href="/terms">Terms of Service</a>.
