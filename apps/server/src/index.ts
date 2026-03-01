@@ -129,7 +129,8 @@ function requireV2HttpProtocol(req: Request, res: Response, next: NextFunction):
   }
 
   const isPublicInviteRedeemPath = req.path === '/invite/redeem' || req.path === '/invite/redeem/'
-  if ((req.method === 'GET' || req.method === 'HEAD') && isPublicInviteRedeemPath) {
+  const isHostedBillingReturnPath = req.path === '/hosted/billing/return' || req.path === '/hosted/billing/return/'
+  if ((req.method === 'GET' || req.method === 'HEAD') && (isPublicInviteRedeemPath || isHostedBillingReturnPath)) {
     next()
     return
   }
