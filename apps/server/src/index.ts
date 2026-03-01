@@ -1554,7 +1554,7 @@ app.get('/pricing', (_req, res) => {
 
           <article class="plan plan-hosted">
             <h2>Managed for you</h2>
-            <p class="price">${HOSTED_DEFAULT_SEAT_PRICE}<span>Per month</span></p>
+            <p class="price">${HOSTED_DEFAULT_SEAT_PRICE}<span>Per user each month</span></p>
             <p class="plan-note">End-to-end encrypted (we can't read your notes).</p>
             <ul class="features">
               <li>You don't have to lift a finger.</li>
