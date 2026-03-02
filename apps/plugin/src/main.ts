@@ -10,7 +10,13 @@ import {
   type ObsidianProtocolData,
 } from 'obsidian'
 import type { Extension } from '@codemirror/state'
-import { DEFAULT_SERVER_URL, SHARED_CONFIG_FILENAME, docRoomName } from '@obsidian-teams/shared'
+import {
+  DEFAULT_SERVER_URL,
+  SHARED_CONFIG_FILENAME,
+  docRoomName,
+  normalizeRelativePath,
+  resolveSharedPath,
+} from '@obsidian-teams/shared'
 import {
   ObsidianTeamsSettingTab,
   DEFAULT_SETTINGS,
@@ -65,6 +71,7 @@ interface BackgroundMirror {
   folderId: string
   sharedFolderPath: string
   relativePath: string
+  fileId: string | null
   session: DocSession
   pendingWriteTimer: number | null
   onYTextChange: (_event: unknown, transaction: { local?: boolean }) => void
@@ -98,6 +105,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
   private membershipDetachInFlight = new Set<string>()
   private protocolBillingInFlight = false
   private inviteJoinInFlight = new Map<string, Promise<boolean>>()
+  private pendingRootRebinds = new Map<string, { newPath: string; expiresAt: number }>()
 
   async onload() {
     await this.loadSettings()
@@ -964,6 +972,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
 
       const sessionPath = this.normalizePath(session.sharedFolderPath)
       if (sessionPath !== desiredPath) {
+        this.pendingRootRebinds.delete(sessionPath)
         this.removeBackgroundMirrorsForFolder(folderId, true)
         session.fileTree.destroy()
         this.folderSessions.delete(folderId)
@@ -1023,7 +1032,8 @@ export default class ObsidianTeamsPlugin extends Plugin {
         sf.path,
         this.settings.serverUrl,
         () => getOrRefreshToken(this, folderId),
-        this.keyManager
+        this.keyManager,
+        (oldPath, newPath) => this.isRootRebindRename(oldPath, newPath)
       )
 
       // Seed initial CRDT file content into Yjs when scanning existing files
@@ -1064,9 +1074,18 @@ export default class ObsidianTeamsPlugin extends Plugin {
       })
 
       // Handle external CRDT file edits (e.g., another plugin modifies a .md file on disk)
-      watcher.onExternalCrdtEdit((_fileId, relativePath, diskContent) => {
+      watcher.onExternalCrdtEdit((fileId, relativePath, diskContent) => {
         if (!this.yjsManager) return
-        const session = this.yjsManager.getSession(docRoomName(folderId, relativePath))
+        const folderSession = this.folderSessions.get(folderId)
+        const mapped = folderSession?.fileTree.getByFileId(fileId)
+        const currentRelativePath = mapped?.relativePath ?? relativePath
+        const normalizedRelativePath = normalizeRelativePath(currentRelativePath)
+        if (!normalizedRelativePath) {
+          console.warn('[teams] Blocked external CRDT import for unsafe path', { folderId, currentRelativePath })
+          return
+        }
+
+        const session = this.yjsManager.getSession(docRoomName(folderId, normalizedRelativePath))
         if (!session) return
 
         const yjsContent = this.readSessionContent(session)
@@ -1075,7 +1094,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
             session.ytext.delete(0, session.ytext.length)
             session.ytext.insert(0, diskContent)
           })
-          debugLog(`[teams] Imported external edit for ${relativePath}`)
+          debugLog(`[teams] Imported external edit for ${normalizedRelativePath}`)
         }
       })
 
@@ -1098,7 +1117,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
       fileTree.onRemoteChange(({ added, updated, deleted }) => {
         for (const [relativePath, entry] of [...added.entries(), ...updated.entries()]) {
           if (entry.type === 'file' && entry.syncMode === 'crdt') {
-            this.ensureBackgroundMirror(folderId, sf.path, relativePath)
+            this.ensureBackgroundMirror(folderId, sf.path, relativePath, entry.fileId ?? null)
           }
         }
         for (const relativePath of deleted) {
@@ -1118,12 +1137,17 @@ export default class ObsidianTeamsPlugin extends Plugin {
   ) {
     for (const [relativePath, entry] of fileTree.getAllFiles()) {
       if (entry.type === 'file' && entry.syncMode === 'crdt') {
-        this.ensureBackgroundMirror(folderId, sharedFolderPath, relativePath)
+        this.ensureBackgroundMirror(folderId, sharedFolderPath, relativePath, entry.fileId ?? null)
       }
     }
   }
 
-  private ensureBackgroundMirror(folderId: string, sharedFolderPath: string, relativePath: string) {
+  private ensureBackgroundMirror(
+    folderId: string,
+    sharedFolderPath: string,
+    relativePath: string,
+    fileId: string | null = null
+  ) {
     if (!this.yjsManager) return
 
     const session = this.yjsManager.getOrCreateSession(folderId, relativePath)
@@ -1135,6 +1159,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
       existing.folderId = folderId
       existing.sharedFolderPath = sharedFolderPath
       existing.relativePath = relativePath
+      if (fileId) existing.fileId = fileId
       return
     }
 
@@ -1142,6 +1167,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
       folderId,
       sharedFolderPath,
       relativePath,
+      fileId,
       session,
       pendingWriteTimer: null,
       onYTextChange: (_event, transaction) => {
@@ -1185,12 +1211,31 @@ export default class ObsidianTeamsPlugin extends Plugin {
     const folderSession = this.folderSessions.get(mirror.folderId)
     if (!folderSession) return
 
-    const currentEntry = folderSession.fileTree.getFile(mirror.relativePath)
+    mirror.sharedFolderPath = folderSession.sharedFolderPath
+
+    const mappedById = mirror.fileId ? folderSession.fileTree.getByFileId(mirror.fileId) : null
+    if (mappedById && mappedById.relativePath !== mirror.relativePath) {
+      debugLog(`[teams] Rebinding stale background mirror ${mirror.relativePath} -> ${mappedById.relativePath}`)
+      this.removeBackgroundMirror(roomName, true)
+      this.ensureBackgroundMirror(mirror.folderId, folderSession.sharedFolderPath, mappedById.relativePath, mirror.fileId)
+      return
+    }
+
+    const currentRelativePath = mappedById?.relativePath ?? mirror.relativePath
+    const currentEntry = mappedById?.entry ?? folderSession.fileTree.getFile(currentRelativePath)
     if (!currentEntry || currentEntry.type !== 'file' || currentEntry.syncMode !== 'crdt') {
       return
     }
 
-    const fullPath = `${mirror.sharedFolderPath}/${mirror.relativePath}`
+    mirror.relativePath = currentRelativePath
+    mirror.fileId = currentEntry.fileId ?? mirror.fileId
+
+    const fullPath = resolveSharedPath(folderSession.sharedFolderPath, currentRelativePath)
+    if (!fullPath) {
+      console.warn('[teams] Blocked unsafe background mirror write', { roomName, currentRelativePath })
+      return
+    }
+
     const yjsContent = this.readSessionContent(mirror.session)
 
     await folderSession.watcher.runWithSuppressedPath(fullPath, async () => {
@@ -1267,11 +1312,73 @@ export default class ObsidianTeamsPlugin extends Plugin {
     return path === SHARED_CONFIG_FILENAME || path.endsWith(`/${SHARED_CONFIG_FILENAME}`)
   }
 
+  private registerPendingRootRebind(oldPath: string, newPath: string): void {
+    const oldRoot = this.normalizePath(oldPath)
+    const newRoot = this.normalizePath(newPath)
+    if (!oldRoot || !newRoot || oldRoot === newRoot) return
+
+    this.pendingRootRebinds.set(oldRoot, {
+      newPath: newRoot,
+      expiresAt: Date.now() + 15_000,
+    })
+    debugLog(`[teams] Pending shared-root rebind ${oldRoot} -> ${newRoot}`)
+  }
+
+  private prunePendingRootRebinds(): void {
+    const now = Date.now()
+    for (const [oldRoot, pending] of this.pendingRootRebinds) {
+      if (pending.expiresAt <= now) {
+        this.pendingRootRebinds.delete(oldRoot)
+      }
+    }
+  }
+
+  private isRootRebindRename(oldPath: string, newPath: string): boolean {
+    const normalizedOldPath = this.normalizePath(oldPath)
+    const normalizedNewPath = this.normalizePath(newPath)
+    if (!normalizedOldPath || !normalizedNewPath) return false
+
+    this.prunePendingRootRebinds()
+
+    for (const [oldRoot, pending] of this.pendingRootRebinds) {
+      const newRoot = pending.newPath
+
+      if (normalizedOldPath === oldRoot && normalizedNewPath === newRoot) {
+        return true
+      }
+
+      if (normalizedOldPath.startsWith(`${oldRoot}/`)) {
+        const suffix = normalizedOldPath.slice(oldRoot.length + 1)
+        if (`${newRoot}/${suffix}` === normalizedNewPath) {
+          return true
+        }
+      }
+
+      if (normalizedNewPath.startsWith(`${newRoot}/`)) {
+        const suffix = normalizedNewPath.slice(newRoot.length + 1)
+        if (`${oldRoot}/${suffix}` === normalizedOldPath) {
+          return true
+        }
+      }
+    }
+
+    return false
+  }
+
   private refreshSharedFoldersOnRootRename(file: TAbstractFile, oldPath: string): void {
     const normalizedOldPath = this.normalizePath(oldPath)
-    const wasKnownSharedRoot = this.sharedFolders.some(
+    const normalizedNewPath = this.normalizePath(file.path)
+    const wasKnownSharedRoot = this.sharedFolders.find(
       (sf) => this.normalizePath(sf.path) === normalizedOldPath
     )
+
+    if (wasKnownSharedRoot) {
+      this.registerPendingRootRebind(normalizedOldPath, normalizedNewPath)
+    } else if (this.isSharedConfigPath(oldPath) && this.isSharedConfigPath(file.path)) {
+      const oldRoot = oldPath.slice(0, Math.max(0, oldPath.lastIndexOf('/')))
+      const newRoot = file.path.slice(0, Math.max(0, file.path.lastIndexOf('/')))
+      this.registerPendingRootRebind(oldRoot, newRoot)
+    }
 
     if (!wasKnownSharedRoot && !this.isSharedConfigPath(oldPath) && !this.isSharedConfigPath(file.path)) {
       return
@@ -1354,7 +1461,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
       console.warn(`[teams] Could not create session for ${file.path}`)
       return
     }
-    this.ensureBackgroundMirror(folderId, sharedFolder.path, relativePath)
+    this.ensureBackgroundMirror(folderId, sharedFolder.path, relativePath, fileId)
 
     // Wait for initial sync before binding the editor to avoid
     // cursor position errors (awareness arrives before doc content)
@@ -1433,6 +1540,35 @@ export default class ObsidianTeamsPlugin extends Plugin {
   /** Keep local file content aligned with CRDT state so subsequent loads are never stale. */
   private async reconcileDiskWithYjs(file: TFile, yjsContent: string) {
     try {
+      const sharedFolder = this.getSharedFolderForPath(file.path)
+      if (!sharedFolder) return
+
+      const folderSession = this.folderSessions.get(sharedFolder.config.folderId)
+      if (!folderSession) return
+
+      const relativePath = normalizeRelativePath(file.path.slice(sharedFolder.path.length + 1))
+      if (!relativePath) {
+        console.warn('[teams] Blocked reconcile for unsafe path', { filePath: file.path })
+        return
+      }
+
+      const resolvedPath = resolveSharedPath(sharedFolder.path, relativePath)
+      if (!resolvedPath || resolvedPath !== file.path) {
+        console.warn('[teams] Blocked reconcile for non-canonical shared path', { filePath: file.path, relativePath })
+        return
+      }
+
+      const currentEntry = folderSession.fileTree.getFile(relativePath)
+      if (!currentEntry || currentEntry.type !== 'file' || currentEntry.syncMode !== 'crdt') return
+
+      if (currentEntry.fileId) {
+        const mapped = folderSession.fileTree.getByFileId(currentEntry.fileId)
+        if (!mapped || mapped.relativePath !== relativePath) {
+          debugLog(`[teams] Skipped reconcile due to stale mapping for ${relativePath}`)
+          return
+        }
+      }
+
       const diskContent = await this.app.vault.cachedRead(file)
       if (diskContent === yjsContent) return
       await this.app.vault.modify(file, yjsContent)

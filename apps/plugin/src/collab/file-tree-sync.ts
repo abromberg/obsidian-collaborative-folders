@@ -81,11 +81,45 @@ export class FileTreeSync {
 
   /** Atomic rename: delete old key, set new key in a single transaction */
   renameFile(oldPath: string, newPath: string): void {
+    if (oldPath === newPath) return
+
     this.ydoc.transact(() => {
       const entry = this.fileTree.get(oldPath)
       if (entry) {
         this.fileTree.delete(oldPath)
         this.fileTree.set(newPath, { ...entry, path: newPath, mtime: new Date().toISOString() })
+      }
+    })
+  }
+
+  /** Atomic directory rename: remap every subtree key under oldDir to newDir. */
+  renameSubtree(oldDir: string, newDir: string): void {
+    if (oldDir === newDir) return
+
+    const oldPrefix = `${oldDir}/`
+    const updates: Array<{ oldPath: string; newPath: string; entry: FileTreeEntry }> = []
+    const nowIso = new Date().toISOString()
+
+    for (const [relativePath, entry] of this.fileTree.entries()) {
+      if (relativePath === oldDir) {
+        updates.push({ oldPath: relativePath, newPath: newDir, entry })
+        continue
+      }
+
+      if (relativePath.startsWith(oldPrefix)) {
+        const suffix = relativePath.slice(oldDir.length)
+        updates.push({ oldPath: relativePath, newPath: `${newDir}${suffix}`, entry })
+      }
+    }
+
+    if (updates.length === 0) return
+
+    this.ydoc.transact(() => {
+      for (const update of updates) {
+        this.fileTree.delete(update.oldPath)
+      }
+      for (const update of updates) {
+        this.fileTree.set(update.newPath, { ...update.entry, path: update.newPath, mtime: nowIso })
       }
     })
   }

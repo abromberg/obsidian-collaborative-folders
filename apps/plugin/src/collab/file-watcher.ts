@@ -3,6 +3,8 @@ import {
   SHARED_CONFIG_FILENAME,
   CRDT_EXTENSIONS,
   CANVAS_EXTENSIONS,
+  normalizeRelativePath,
+  resolveSharedPath,
   type FileTreeEntry,
 } from '@obsidian-teams/shared'
 import { FileTreeSync } from './file-tree-sync'
@@ -34,7 +36,8 @@ export class SharedFolderWatcher {
     private sharedFolderPath: string,
     private serverUrl: string,
     private getAuthToken: () => Promise<string | null>,
-    private keyManager: FolderKeyManager
+    private keyManager: FolderKeyManager,
+    private isRootRebindRename: ((oldPath: string, newPath: string) => boolean) | null = null
   ) {}
 
   private initialCrdtCallback: ((fileId: string, relativePath: string, content: string) => void) | null = null
@@ -231,6 +234,11 @@ export class SharedFolderWatcher {
         // A CRDT file was modified on disk (possibly by another plugin or external editor).
         // Read content and push it into Yjs so it propagates to other peers.
         this.vault.cachedRead(file).then((content) => {
+          const current = this.fileTree.getByFileId(entry.fileId)
+          if (!current || current.relativePath !== relativePath) {
+            debugLog(`[teams] Skipped stale external edit import for ${relativePath}`)
+            return
+          }
           this.externalEditCallback!(entry.fileId, relativePath, content)
         }).catch((err) => {
           console.error(`[teams] Failed to read externally modified CRDT file ${file.path}:`, err)
@@ -261,17 +269,30 @@ export class SharedFolderWatcher {
   onLocalRename(file: TAbstractFile, oldPath: string): void {
     const wasInShared = oldPath.startsWith(this.sharedFolderPath + '/')
     const isInShared = this.isInSharedFolder(file)
+    const newPath = file.path
 
     if (wasInShared && isInShared) {
       // Rename within the shared folder — atomic rename
       const oldRelative = oldPath.slice(this.sharedFolderPath.length + 1)
       const newRelative = this.getRelativePath(file)
-      this.fileTree.renameFile(oldRelative, newRelative)
+      if (file instanceof TFolder) {
+        this.fileTree.renameSubtree(oldRelative, newRelative)
+      } else {
+        this.fileTree.renameFile(oldRelative, newRelative)
+      }
     } else if (wasInShared && !isInShared) {
+      if (this.isRootRebindRename?.(oldPath, newPath)) {
+        debugLog(`[teams] Ignored local rename during shared-root rebind: ${oldPath} -> ${newPath}`)
+        return
+      }
       // Moved out of shared folder — treat as delete
       const oldRelative = oldPath.slice(this.sharedFolderPath.length + 1)
       this.fileTree.removeFile(oldRelative)
     } else if (!wasInShared && isInShared) {
+      if (this.isRootRebindRename?.(oldPath, newPath)) {
+        debugLog(`[teams] Ignored local rename during shared-root rebind: ${oldPath} -> ${newPath}`)
+        return
+      }
       // Moved into shared folder — treat as create
       this.onLocalCreate(file)
     }
@@ -285,7 +306,11 @@ export class SharedFolderWatcher {
       this.fileTree.addOrUpdateFile(relativePath, entry)
     }
 
-    const fullPath = `${this.sharedFolderPath}/${relativePath}`
+    const fullPath = this.resolveSafeSharedPath(relativePath)
+    if (!fullPath) {
+      console.warn('[teams] Blocked remote add for unsafe path', { folderId: this.folderId, relativePath })
+      return
+    }
     this.suppress(fullPath)
 
     try {
@@ -319,7 +344,11 @@ export class SharedFolderWatcher {
     // Content updates for CRDT files come through Yjs doc sync, not the file tree.
     if (entry.syncMode !== 'blob' || !entry.contentHash) return
 
-    const fullPath = `${this.sharedFolderPath}/${relativePath}`
+    const fullPath = this.resolveSafeSharedPath(relativePath)
+    if (!fullPath) {
+      console.warn('[teams] Blocked remote update for unsafe path', { folderId: this.folderId, relativePath })
+      return
+    }
 
     this.suppress(fullPath)
     try {
@@ -330,7 +359,11 @@ export class SharedFolderWatcher {
   }
 
   private async handleRemoteDelete(relativePath: string): Promise<void> {
-    const fullPath = `${this.sharedFolderPath}/${relativePath}`
+    const fullPath = this.resolveSafeSharedPath(relativePath)
+    if (!fullPath) {
+      console.warn('[teams] Blocked remote delete for unsafe path', { folderId: this.folderId, relativePath })
+      return
+    }
     this.suppress(fullPath)
 
     try {
@@ -508,6 +541,12 @@ export class SharedFolderWatcher {
       return true
     }
     return false
+  }
+
+  private resolveSafeSharedPath(relativePath: string): string | null {
+    const normalized = normalizeRelativePath(relativePath)
+    if (!normalized) return null
+    return resolveSharedPath(this.sharedFolderPath, normalized)
   }
 
   /** Run a file write while suppressing vault events to avoid sync feedback loops. */
