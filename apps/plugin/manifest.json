@@ -1,7 +1,7 @@
 {
   "id": "collaborative-folders",
   "name": "Collaborative Folders",
-  "version": "0.1.20",
+  "version": "0.1.21",
   "minAppVersion": "0.16.0",
   "author": "Andy Bromberg",
   "description": "Real-time multiplayer editing of shared folders and notes.",
