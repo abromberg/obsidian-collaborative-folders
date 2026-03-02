@@ -1,6 +1,16 @@
-import { Plugin, TFolder, TFile, MarkdownView, Notice, setIcon, requestUrl, type ObsidianProtocolData } from 'obsidian'
+import {
+  Plugin,
+  TAbstractFile,
+  TFolder,
+  TFile,
+  MarkdownView,
+  Notice,
+  setIcon,
+  requestUrl,
+  type ObsidianProtocolData,
+} from 'obsidian'
 import type { Extension } from '@codemirror/state'
-import { DEFAULT_SERVER_URL, docRoomName } from '@obsidian-teams/shared'
+import { DEFAULT_SERVER_URL, SHARED_CONFIG_FILENAME, docRoomName } from '@obsidian-teams/shared'
 import {
   ObsidianTeamsSettingTab,
   DEFAULT_SETTINGS,
@@ -48,6 +58,7 @@ interface FolderSession {
   fileTree: FileTreeSync
   watcher: SharedFolderWatcher
   keyManager: FolderKeyManager
+  sharedFolderPath: string
 }
 
 interface BackgroundMirror {
@@ -307,6 +318,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
         for (const session of this.folderSessions.values()) {
           session.watcher.onLocalRename(file, oldPath)
         }
+        this.refreshSharedFoldersOnRootRename(file, oldPath)
       })
     )
 
@@ -935,15 +947,27 @@ export default class ObsidianTeamsPlugin extends Plugin {
 
   /** Start/stop FileTreeSync + SharedFolderWatcher to match discovered shared folders */
   private syncFolderSessions() {
-    const activeFolderIds = new Set(this.sharedFolders.map(sf => sf.config.folderId))
+    const desiredFolderPathById = new Map(
+      this.sharedFolders.map((sf) => [sf.config.folderId, this.normalizePath(sf.path)])
+    )
 
-    // Tear down sessions for folders that no longer exist
+    // Tear down sessions for folders that no longer exist or moved to a new path.
     for (const [folderId, session] of this.folderSessions) {
-      if (!activeFolderIds.has(folderId)) {
+      const desiredPath = desiredFolderPathById.get(folderId)
+      if (!desiredPath) {
         this.removeBackgroundMirrorsForFolder(folderId, true)
         session.fileTree.destroy()
         this.folderSessions.delete(folderId)
         debugLog(`[teams] Stopped file tree sync for removed folder ${folderId}`)
+        continue
+      }
+
+      const sessionPath = this.normalizePath(session.sharedFolderPath)
+      if (sessionPath !== desiredPath) {
+        this.removeBackgroundMirrorsForFolder(folderId, true)
+        session.fileTree.destroy()
+        this.folderSessions.delete(folderId)
+        debugLog(`[teams] Restarting file tree sync after folder move: ${folderId} (${sessionPath} -> ${desiredPath})`)
       }
     }
 
@@ -1082,7 +1106,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
         }
       })
 
-      this.folderSessions.set(folderId, { fileTree, watcher, keyManager: this.keyManager })
+      this.folderSessions.set(folderId, { fileTree, watcher, keyManager: this.keyManager, sharedFolderPath: sf.path })
       debugLog(`[teams] Started file tree sync for ${sf.path} (${folderId})`)
     }
   }
@@ -1237,6 +1261,23 @@ export default class ObsidianTeamsPlugin extends Plugin {
     while (normalized.startsWith('/')) normalized = normalized.slice(1)
     while (normalized.endsWith('/')) normalized = normalized.slice(0, -1)
     return normalized
+  }
+
+  private isSharedConfigPath(path: string): boolean {
+    return path === SHARED_CONFIG_FILENAME || path.endsWith(`/${SHARED_CONFIG_FILENAME}`)
+  }
+
+  private refreshSharedFoldersOnRootRename(file: TAbstractFile, oldPath: string): void {
+    const normalizedOldPath = this.normalizePath(oldPath)
+    const wasKnownSharedRoot = this.sharedFolders.some(
+      (sf) => this.normalizePath(sf.path) === normalizedOldPath
+    )
+
+    if (!wasKnownSharedRoot && !this.isSharedConfigPath(oldPath) && !this.isSharedConfigPath(file.path)) {
+      return
+    }
+
+    void this.refreshSharedFolders()
   }
 
   /** Find the shared folder that contains the given path */
