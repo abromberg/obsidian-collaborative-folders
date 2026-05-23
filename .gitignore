@@ -12,6 +12,10 @@ apps/plugin/main.js
 apps/plugin/main.js.map
 release/
 
+# Root-level plugin artifacts copied by scripts/sync-root-artifacts.mjs.
+# (main.js is already covered by *.js; styles.css lives canonically under apps/plugin/)
+/styles.css
+
 # Environment
 .env
 .env.local
