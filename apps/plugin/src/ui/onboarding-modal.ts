@@ -32,7 +32,7 @@ export class OnboardingModal extends Modal {
     })
 
     if (this.plugin.settings.pendingInviteToken) {
-      contentEl.createEl('div', {
+      contentEl.createDiv({
         cls: 'obsidian-teams-onboarding-pending',
         text: 'You have a pending invite. Complete setup to join it.',
       })

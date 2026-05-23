@@ -1650,7 +1650,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
 
     const details = this.getStatusDetails()
     const healthy = this.isStatusHealthy()
-    const container = this.statusBarEl.createEl('span', {
+    const container = this.statusBarEl.createSpan({
       cls: 'obsidian-teams-status',
       attr: {
         role: 'button',
@@ -1659,8 +1659,8 @@ export default class ObsidianTeamsPlugin extends Plugin {
         'aria-label': details.replace(/\n/g, ', '),
       },
     })
-    container.createEl('span', { cls: 'obsidian-teams-status-label', text: 'Collab' })
-    const icon = container.createEl('span', {
+    container.createSpan({ cls: 'obsidian-teams-status-label', text: 'Collab' })
+    const icon = container.createSpan({
       cls: `obsidian-teams-status-icon ${healthy ? 'is-healthy' : 'is-unhealthy'}`,
       attr: { 'aria-hidden': 'true' },
     })
@@ -2056,7 +2056,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
       this.scheduleSharedFolderBadgeRefresh()
     })
 
-    this.sharedFolderBadgeObserver.observe(document.body, {
+    this.sharedFolderBadgeObserver.observe(activeDocument.body, {
       childList: true,
       subtree: true,
     })
@@ -2105,7 +2105,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
   }
 
   private createSharedBadge(extraClass: string): HTMLElement {
-    const badge = document.createElement('span')
+    const badge = createSpan()
     badge.className = `obsidian-teams-shared-badge ${extraClass}`
     badge.setAttribute('aria-label', 'Shared folder')
     badge.setAttribute('title', 'Shared folder')
@@ -2119,7 +2119,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
     badgeClass: string
   ) {
     if (!host) return
-    if (!(host instanceof HTMLElement)) return
+    if (!host.instanceOf(HTMLElement)) return
     const existingBadge = host.querySelector<HTMLElement>(`.${badgeClass}`)
     if (!isShared) {
       existingBadge?.remove()
@@ -2131,7 +2131,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
 
   private renderSharedFolderBadges() {
     const sharedPaths = new Set(this.sharedFolders.map((sf) => this.normalizePath(sf.path)))
-    const folderTitles = document.querySelectorAll('.nav-folder-title')
+    const folderTitles = activeDocument.querySelectorAll('.nav-folder-title')
 
     folderTitles.forEach((titleEl) => {
       const path = this.getElementPath(titleEl)
@@ -2141,7 +2141,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
   }
 
   private renderSharedFileBadges() {
-    const fileTitles = document.querySelectorAll('.nav-file-title')
+    const fileTitles = activeDocument.querySelectorAll('.nav-file-title')
     fileTitles.forEach((titleEl) => {
       const path = this.getElementPath(titleEl)
       this.updateSharedBadge(titleEl, Boolean(path && this.isSharedPath(path)), 'obsidian-teams-shared-badge-file')
@@ -2149,7 +2149,7 @@ export default class ObsidianTeamsPlugin extends Plugin {
   }
 
   private renderTabBadges() {
-    const tabHeaders = document.querySelectorAll('.workspace-tab-header')
+    const tabHeaders = activeDocument.querySelectorAll('.workspace-tab-header')
     tabHeaders.forEach((tabEl) => {
       const path = this.getElementPath(tabEl)
       const title = tabEl.querySelector<HTMLElement>('.workspace-tab-header-inner-title')
@@ -2158,14 +2158,14 @@ export default class ObsidianTeamsPlugin extends Plugin {
   }
 
   private renderEditorTitleBadges() {
-    document
+    activeDocument
       .querySelectorAll('.obsidian-teams-shared-badge-header-title, .obsidian-teams-shared-badge-inline-title')
       .forEach((badge) => badge.remove())
 
     const activePath = this.app.workspace.getActiveFile()?.path
     if (!activePath) return
 
-    const activeLeaf = document.querySelector('.workspace-leaf.mod-active')
+    const activeLeaf = activeDocument.querySelector('.workspace-leaf.mod-active')
     if (!activeLeaf) return
 
     const isShared = this.isSharedPath(activePath)

@@ -23,7 +23,7 @@ import { debugLog } from '../utils/logger'
 export class SharedFolderWatcher {
   /** Paths we are currently writing locally — suppressed from vault events */
   private suppressedPaths = new Set<string>()
-  private pendingAttachmentLocalization = new Map<string, ReturnType<typeof setTimeout>>()
+  private pendingAttachmentLocalization = new Map<string, number>()
 
   private externalEditCallback: ((fileId: string, relativePath: string, content: string) => void) | null = null
   private attachmentLocalizationCallback: ((file: TFile) => Promise<void>) | null = null
@@ -497,10 +497,10 @@ export class SharedFolderWatcher {
 
     const existingTimer = this.pendingAttachmentLocalization.get(file.path)
     if (existingTimer !== undefined) {
-      clearTimeout(existingTimer)
+      activeWindow.clearTimeout(existingTimer)
     }
 
-    const timer = setTimeout(() => {
+    const timer = activeWindow.setTimeout(() => {
       this.pendingAttachmentLocalization.delete(file.path)
       void this.attachmentLocalizationCallback?.(file).catch((err) => {
         console.error(`[teams] Attachment localization failed for ${file.path}:`, err)
@@ -532,7 +532,7 @@ export class SharedFolderWatcher {
 
   private unsuppress(path: string): void {
     // Use a short delay so the vault event has time to fire
-    setTimeout(() => this.suppressedPaths.delete(path), 500)
+    activeWindow.setTimeout(() => this.suppressedPaths.delete(path), 500)
   }
 
   private isSuppressed(path: string): boolean {

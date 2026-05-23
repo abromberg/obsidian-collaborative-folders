@@ -201,7 +201,7 @@ export async function uploadBlobWithRetry(
       lastError = err instanceof Error ? err : new Error(String(err))
       if (attempt < maxRetries - 1) {
         const delay = Math.min(1000 * Math.pow(2, attempt), 10000)
-        await new Promise((resolve) => setTimeout(resolve, delay))
+        await new Promise((resolve) => activeWindow.setTimeout(resolve, delay))
       }
     }
   }

@@ -40,13 +40,13 @@ export function initAwareness(
 
   // Periodically re-broadcast local state to prevent the 30s awareness timeout
   // from removing our cursor on remote peers.
-  const interval = setInterval(() => {
+  const interval = activeWindow.setInterval(() => {
     if (awareness.getLocalState() !== null) {
       awareness.setLocalStateField('user', userState)
     }
   }, AWARENESS_REFRESH_MS)
 
-  return () => clearInterval(interval)
+  return () => activeWindow.clearInterval(interval)
 }
 
 /** Get all remote users currently connected to this document */

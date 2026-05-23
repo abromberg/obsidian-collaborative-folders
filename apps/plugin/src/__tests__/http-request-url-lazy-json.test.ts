@@ -1,6 +1,6 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { httpRequest } from '../utils/http'
+import { httpRequest, registerObsidianRequestUrl } from '../utils/http'
 
 interface MockRequest {
   url: string
@@ -19,10 +19,9 @@ function withRequestUrlMock(
     text: string
   }>
 ) {
-  const previous = globalThis.__obsidianRequestUrl
-  globalThis.__obsidianRequestUrl = fn as typeof globalThis.__obsidianRequestUrl
+  registerObsidianRequestUrl(fn as unknown as Parameters<typeof registerObsidianRequestUrl>[0])
   return () => {
-    globalThis.__obsidianRequestUrl = previous
+    registerObsidianRequestUrl(null)
   }
 }
 

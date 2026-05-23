@@ -31,9 +31,14 @@ function fromBase64(value: string): Uint8Array {
 }
 
 function getStorage(): Storage | null {
-  if (typeof globalThis === 'undefined') return null
-  if (!('localStorage' in globalThis)) return null
-  return globalThis.localStorage
+  // `activeWindow` is Obsidian's popout-aware window reference. It is undefined
+  // outside the Obsidian runtime (e.g. tests), where we fall back to in-memory storage.
+  if (typeof activeWindow === 'undefined') return null
+  try {
+    return activeWindow.localStorage ?? null
+  } catch {
+    return null
+  }
 }
 
 export class KeyStore {

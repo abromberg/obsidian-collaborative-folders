@@ -32,10 +32,10 @@ interface HttpRequestInit {
   body?: string | ArrayBuffer
 }
 
-declare global {
-  // Set by plugin runtime so modules that do not import `obsidian` can still prefer requestUrl.
-  var __obsidianRequestUrl: ObsidianRequestUrlFn | undefined
-}
+// Set by the plugin runtime so modules that do not import `obsidian` can still prefer
+// requestUrl. A module-level binding is shared across all windows in the same JS context,
+// so it works for popout windows without reaching for any ambient global object.
+let injectedRequestUrl: ObsidianRequestUrlFn | null = null
 
 class HeaderMap implements HttpHeaders {
   private readonly normalized = new Map<string, string>()
@@ -109,24 +109,13 @@ function makeResponseFromRequestUrl(payload: {
   }
 }
 
-export function registerObsidianRequestUrl(requestUrl: ObsidianRequestUrlFn): void {
-  globalThis.__obsidianRequestUrl = requestUrl
-}
-
-function resolveObsidianRequestUrl(): ObsidianRequestUrlFn | null {
-  const injected = globalThis.__obsidianRequestUrl
-  if (typeof injected === 'function') return injected
-
-  const globalCandidate = (globalThis as { requestUrl?: unknown }).requestUrl
-  return typeof globalCandidate === 'function'
-    ? (globalCandidate as ObsidianRequestUrlFn)
-    : null
+export function registerObsidianRequestUrl(requestUrl: ObsidianRequestUrlFn | null): void {
+  injectedRequestUrl = requestUrl
 }
 
 export async function httpRequest(url: string, init: HttpRequestInit = {}): Promise<HttpResponseLike> {
-  const requestUrl = resolveObsidianRequestUrl()
-  if (requestUrl) {
-    const response = await requestUrl({
+  if (injectedRequestUrl) {
+    const response = await injectedRequestUrl({
       url,
       method: init.method,
       headers: init.headers,
@@ -136,8 +125,8 @@ export async function httpRequest(url: string, init: HttpRequestInit = {}): Prom
     return makeResponseFromRequestUrl(response)
   }
 
-  if (typeof globalThis.fetch !== 'function') {
+  if (typeof fetch !== 'function') {
     throw new Error('No HTTP implementation is available')
   }
-  return globalThis.fetch(url, init as RequestInit) as Promise<HttpResponseLike>
+  return fetch(url, init as RequestInit) as Promise<HttpResponseLike>
 }

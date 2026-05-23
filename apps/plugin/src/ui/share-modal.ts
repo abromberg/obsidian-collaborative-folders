@@ -321,7 +321,7 @@ export class ShareFolderModal extends Modal {
 
     if (this.latestInviteToken) {
       const readyCard = contentEl.createDiv({ cls: 'obsidian-teams-invite-ready' })
-      readyCard.createEl('div', {
+      readyCard.createDiv({
         cls: 'obsidian-teams-invite-ready-title',
         text: this.latestInviteLabel
           ? `Invite ready for: ${this.latestInviteLabel}`

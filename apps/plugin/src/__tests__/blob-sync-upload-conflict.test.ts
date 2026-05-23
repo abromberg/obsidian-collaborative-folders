@@ -2,6 +2,12 @@ import test from 'node:test'
 import assert from 'node:assert/strict'
 import type { FolderKeyManager } from '../crypto/folder-key-manager'
 import { uploadBlob, uploadBlobWithRetry } from '../collab/blob-sync'
+import { registerObsidianRequestUrl } from '../utils/http'
+
+// Obsidian's `activeWindow` global is undefined under node; map it to the process
+// global so the retry backoff timer in uploadBlobWithRetry resolves during tests.
+const globalScope = globalThis as typeof globalThis & { activeWindow?: typeof globalThis }
+globalScope.activeWindow ??= globalScope
 
 interface MockRequest {
   url: string
@@ -30,10 +36,9 @@ function makeResponse(status: number, json: unknown, text = ''): MockResponse {
 }
 
 function withRequestUrlMock(fn: (request: MockRequest) => Promise<MockResponse>) {
-  const previous = globalThis.__obsidianRequestUrl
-  globalThis.__obsidianRequestUrl = fn as typeof globalThis.__obsidianRequestUrl
+  registerObsidianRequestUrl(fn as unknown as Parameters<typeof registerObsidianRequestUrl>[0])
   return () => {
-    globalThis.__obsidianRequestUrl = previous
+    registerObsidianRequestUrl(null)
   }
 }
 

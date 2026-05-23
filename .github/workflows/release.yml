@@ -24,6 +24,10 @@ on:
 
 permissions:
   contents: write
+  # Required for actions/attest-build-provenance to mint a Sigstore-signed
+  # provenance attestation for the published release assets.
+  id-token: write
+  attestations: write
 
 concurrency:
   group: plugin-release-${{ github.ref_name }}
@@ -141,6 +145,15 @@ jobs:
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git tag "$VERSION"
           git push origin "refs/tags/${VERSION}"
+
+      - name: Attest build provenance
+        if: ${{ steps.tag_check.outputs.publish == 'true' }}
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: |
+            release/obsidian-plugin/main.js
+            release/obsidian-plugin/manifest.json
+            release/obsidian-plugin/styles.css
 
       - name: Publish GitHub release
         if: ${{ steps.tag_check.outputs.publish == 'true' }}
